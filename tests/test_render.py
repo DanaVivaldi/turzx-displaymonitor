@@ -83,3 +83,11 @@ def test_a_page_can_carry_its_own_logos(cfg_pages):
     page = dict(pages["pages"][0], logos=["amd", "msi"])
     other = r.render(page, demo_snapshot("en"), 0, 8)
     assert plain.tobytes() != other.tobytes()
+
+
+def test_value_slot_does_not_depend_on_the_digit_count():
+    r = Renderer(None, {"header": False})
+    for px in (24, 30):
+        assert r.slot_w("9%", px) == r.slot_w("63%", px) == r.slot_w("100%", px)
+        assert r.slot_w("5°C", px) == r.slot_w("62°C", px)
+        assert r.slot_w("--", px) == r.text_w("--", px)

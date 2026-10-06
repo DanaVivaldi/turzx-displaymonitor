@@ -7,6 +7,7 @@ Everything is drawn at 3x and downsampled for smooth edges.
 """
 import logging
 import os
+import re
 import string
 
 import yaml
@@ -296,6 +297,19 @@ class Renderer:
 
     def text_w(self, s, px):
         return self.font(px).getlength(s) / S
+
+    def slot_w(self, s, px):
+        """Width reserved for a value so that what follows it never moves when its digit count changes: every digit is measured
+        as the font's widest one and the first integer is padded to 3 digits for a percentage (up to 100) or 2 for anything else."""
+        font = self.font(px)
+        digit = max("0123456789", key=lambda c: font.getlength(c))
+        m = re.search(r"\d+", s)
+        if not m:
+            return self.text_w(s, px)
+        want = 3 if "%" in s else 2
+        pad = digit * max(0, want - len(m.group()))
+        ref = s[:m.start()] + pad + re.sub(r"\d", digit, s[m.start():])
+        return max(self.text_w(ref, px), self.text_w(s, px))
 
     # -- static background (built once) ---------------------------------------------------------
     def _background_picture(self):
@@ -588,7 +602,7 @@ class Renderer:
             self.draw_text(d, CARD_IN0, y + (20 if tall else 18) * k, s, big_px, col)
         if "mid" in card:
             ms, mcol = self.text_of(card["mid"], snap, t["cyan"])
-            self.draw_text(d, CARD_IN0 + self.text_w(s, big_px) + 14, y + (36 if tall else 33) * k, ms, 18 * min(fk, 1.04), mcol, "lm")
+            self.draw_text(d, CARD_IN0 + self.slot_w(s, big_px) + 14, y + (36 if tall else 33) * k, ms, 18 * min(fk, 1.04), mcol, "lm")
         right = card.get("right", [])
         if len(right) == 1:
             rs, rc = self.text_of(right[0], snap, t["dim"])
