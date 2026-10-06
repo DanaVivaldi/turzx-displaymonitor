@@ -57,7 +57,8 @@ class Sensors:
         self.procs_s, self.ping_s = s.get("procs_s", 3.0), s.get("ping_s", 5.0)
         self.ping_host = cfg.get("network", {}).get("ping_host", "1.1.1.1")
         self.mb_ignore = {str(i) for i in s.get("mb_ignore_temps", [])}
-        self.lang = cfg.get("language", "en") if cfg.get("language", "en") in DAYS else "en"
+        lang = cfg.get("date_language") or cfg.get("language", "en")   # day / month names, e.g. "Sat 03 Dec" (en) or "sab 03 dic" (it)
+        self.lang = lang if lang in DAYS else "en"
         self._lock = threading.Lock()
         self._state: dict = {}
         self._stop = threading.Event()

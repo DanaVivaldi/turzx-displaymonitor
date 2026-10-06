@@ -2,7 +2,8 @@
 # Copy this file to config/config.yaml and edit it; config/config.yaml is git-ignored (your own settings).
 # If config/config.yaml does not exist, this example is used.
 
-language: en           # language of dates and of the tray menu (en | it)
+language: en           # language of the tray menu (en | it)
+# date_language: en    # language of the day / month names in the date, e.g. "Sat 03 Dec" (en) or "sab 03 dic" (it); defaults to `language`
 
 layout:
   header: true         # true = top bar with title, date/time and (optional) logos.

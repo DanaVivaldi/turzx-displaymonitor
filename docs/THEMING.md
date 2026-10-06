@@ -112,7 +112,7 @@ Narrow, tabular‑figure fonts look best (numbers must not jump around). Sizes a
 | Key | Default | Meaning |
 |---|---|---|
 | `layout.header` | `true` | `true`: top bar with title, date/time and logos. `false`: compact layout, bigger ring and cards, logos at the ring's lower corners |
-| `layout.clock` | `true` | compact layout only: big time + date at the top‑left of the ring |
+| `layout.clock` | `true` | compact layout only: big 24 h time with the date below it (`Sat 03 Dec`, see `date_language`) at the top‑left; the legend is right‑aligned at the top, just before the cards |
 | `layout.logo_h` | `22` | logo height |
 | `layout.ring_scale` | `1.15` | compact layout only: ring size |
 

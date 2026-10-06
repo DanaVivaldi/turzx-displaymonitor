@@ -13,7 +13,8 @@ If your own file is missing the example is used. Changes take effect after a res
 
 | Key | Default | Meaning |
 |---|---|---|
-| `language` | `en` | `en` or `it`: dates and tray menu |
+| `language` | `en` | `en` or `it`: tray menu (and the date names unless `date_language` is set) |
+| `date_language` | = `language` | `en` or `it`: day / month names of the date (`Sat 03 Dec` / `sab 03 dic`); the time is always 24 h |
 | `layout.header` | `true` | `true`: top bar with page title, date/time and the optional logos. `false`: **compact layout** — no top bar, a 15 % bigger ring, cards stretched over the full height (fonts and spacing scale with them), logos at the two lower corners of the ring |
 | `layout.logo_h` | `22` | logo height in px |
 | `layout.ring_scale` | `1.15` | compact layout only: ring size relative to the default |

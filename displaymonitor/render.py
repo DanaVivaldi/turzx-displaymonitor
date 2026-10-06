@@ -374,11 +374,14 @@ class Renderer:
         elif self.clock:                      # compact layout: date + time above the ring's left side, legend to its right
             self.draw_text(d, 14, 5, str(snap.get("time", "")), 30, t["white"], "la", bold=True)
             self.draw_text(d, 15, 40, str(snap.get("date", "")), 13, t["dim"], "la", bold=True)
-            legend_x = 112
         if page.get("ring"):
             self._ring(d, page["ring"], snap)
             if page["ring"].get("legend"):
-                self._legend(d, page["ring"]["legend"], x=legend_x, y=self.legend_y)
+                items = page["ring"]["legend"]
+                if not self.header:               # compact: right-aligned, ending just before the cards
+                    width = 22 + max((self.font(13, True).getlength(str(i.get("text", ""))) / S for i in items), default=0)
+                    legend_x = CARD_X0 - 6 - width
+                self._legend(d, items, x=legend_x, y=self.legend_y)
         for card, cy0, ch in geo:
             self._k = k
             self._card(d, card, cy0, ch, snap)
