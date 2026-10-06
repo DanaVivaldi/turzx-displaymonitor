@@ -95,8 +95,21 @@ layout:
   logo_h: 22                                    # height in px; width follows the picture's aspect ratio
 ```
 
-PNG with transparency works best. With the compact layout (`layout.header: false`) the logos sit at the two lower corners of the ring;
-with the top bar they sit in the top corners. **No logos are shipped** — brand logos are trademarks.
+PNG with transparency works best. With the compact layout (`layout.header: false`, the default) the logos sit at the two lower corners of the ring;
+with the top bar (`header: true`) they sit in the top corners.
+
+**No logos are shipped** — AMD, Intel, NVIDIA, ASUS ROG … are trademarks and cannot be redistributed in an MIT repository. Two easy ways to get yours:
+
+* **Download the official one** from the vendor's brand / press page, save it under `assets/` (that folder is git‑ignored) and point `logos:` at it,
+  e.g. `logos: [assets/amd.png, assets/asus_rog.png]`.
+* **Use a text badge** — no file needed, a rounded outline with your text and colour:
+
+  ```yaml
+  theme:
+    logos: [{text: "AMD", color: "#ed1c24"}, {text: "RYZEN", color: "#f0f8ff"}]
+  ```
+
+  ![Text badges](img/logo_badges.png)
 
 ### Fonts
 
@@ -111,7 +124,7 @@ Narrow, tabular‑figure fonts look best (numbers must not jump around). Sizes a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `layout.header` | `true` | `true`: top bar with title, date/time and logos. `false`: compact layout, bigger ring and cards, logos at the ring's lower corners |
+| `layout.header` | `false` | `false`: **compact layout** (default) — bigger ring and cards, big clock, logos at the ring's lower corners. `true`: top bar with page title, date/time and logos |
 | `layout.clock` | `true` | compact layout only: big 24 h time with the date below it (`Sat 03 Dec`, see `date_language`) at the top‑left; the legend is right‑aligned at the top, just before the cards |
 | `layout.logo_h` | `22` | logo height |
 | `layout.ring_scale` | `1.15` | compact layout only: ring size |

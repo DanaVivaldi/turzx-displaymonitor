@@ -6,8 +6,8 @@ language: en           # language of the tray menu (en | it)
 # date_language: en    # language of the day / month names in the date, e.g. "Sat 03 Dec" (en) or "sab 03 dic" (it); defaults to `language`
 
 layout:
-  header: true         # true = top bar with title, date/time and (optional) logos.
-                       # false = compact: no top bar, bigger ring, taller cards, logos at the ring's lower corners.
+  header: false        # false = compact: no top bar, bigger ring, taller cards, big clock top-left, logos at the ring's lower corners.
+                       # true = top bar with the page title, date/time and (optional) logos.
   logo_h: 22           # logo height in px
   # clock: true        # compact layout only: big time + date at the top-left of the ring
   # ring_scale: 1.15   # compact layout only: size of the ring relative to the default
@@ -32,7 +32,7 @@ rotate_s: 0            # 0 = no automatic rotation; N = seconds per page (can al
 
 theme:
   # preset: nebula       # a look saved as themes/NAME.yaml (shipped) or config/themes/NAME.yaml (yours): default | nebula | grid | ember | sunset | aurora
-  # logos: [assets/left.png, assets/right.png]   # optional logos (none are shipped)
+  # logos: [assets/left.png, {text: "AMD", color: "#ed1c24"}]   # optional: image files and/or text badges (no logos are shipped)
   # background: assets/backgrounds/mypicture.jpg # optional background picture; see docs/THEMING.md for dim / blur / panel_opacity ...
   # Any colour can be overridden here too, e.g.:  cyan: "#ff66cc"
   # Colour thresholds, the same for temperatures (°C) and utilisation (%):

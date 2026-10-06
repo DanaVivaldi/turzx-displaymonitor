@@ -84,7 +84,7 @@ def resolve_theme(theme_cfg: dict | None) -> dict:
     th["heat"] = [to_rgb(c) for c in th["heat"]]
     th["disc"] = [to_rgb(c) for c in th["disc"]]
     th["scale"] = tuple(th["scale"])
-    th["logos"] = tuple(th.get("logos") or ())
+    th["logos"] = tuple(th.get("logos") or ())      # each: an image path or {text: "AMD", color: "#ed1c24"}
     th["background_focus"] = tuple(th.get("background_focus") or (0.5, 0.5))
     return th
 
@@ -141,7 +141,7 @@ class Renderer:
         self._fonts = {}
         self._font_path = self._find_font(self.t["font"])
         lc = layout_cfg or {}
-        self.header = bool(lc.get("header", True))
+        self.header = bool(lc.get("header", False))   # compact layout by default (see docs/THEMING.md)
         self.clock = bool(lc.get("clock", True))        # compact layout: date + time at the top-left of the ring
         self.logo_h = float(lc.get("logo_h", 22))
         self._k = 1.0                       # vertical stretch of the card being drawn (compact layout)
@@ -284,6 +284,32 @@ class Renderer:
             im = Image.blend(im, Image.new("RGB", im.size, t["bg"]), min(1.0, dim))
         return im
 
+    def _load_logo(self, spec):
+        """A logo spec is an image path, or a text badge {text, color} (no image file needed). Returns an RGBA image
+        `logo_h` px high (at 3x), or None."""
+        if not spec:
+            return None
+        if isinstance(spec, dict):
+            text = str(spec.get("text", "")).strip()
+            if not text:
+                return None
+            col = to_rgb(spec.get("color", self.t["white"]))
+            h = int(sc(self.logo_h))
+            font = self.font(self.logo_h * 0.58, bold=True)
+            w = int(font.getlength(text) + 0.85 * h)
+            im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            d = ImageDraw.Draw(im)
+            d.rounded_rectangle((0, 0, w - 1, h - 1), radius=int(h * 0.22), fill=(*self.t["bg"], 170), outline=(*col, 255), width=sc(1.3))
+            d.text((w / 2, h / 2 + sc(0.3)), text, font=font, fill=col, anchor="mm")
+            return im
+        try:
+            lg = Image.open(project_path(spec)).convert("RGBA")
+        except OSError as e:
+            log.warning("cannot open logo %s: %s", spec, e)
+            return None
+        k = self.logo_h / lg.height
+        return lg.resize((max(1, int(lg.width * k * S)), int(self.logo_h * S)), Image.LANCZOS)
+
     def _build_background(self):
         t = self.t
         img = self._background_picture() or Image.new("RGB", (W * S, H * S), t["bg"])
@@ -315,16 +341,10 @@ class Renderer:
             left_x, right_x, top_y = 14, W - 14, 9
         else:
             left_x, right_x, top_y = cx - ring_r, cx + ring_r, 298 - self.logo_h
-        for name, x, right in ((logos[0], left_x, False), (logos[1], right_x, True)):
-            if not name:
-                continue
-            try:
-                lg = Image.open(os.path.join(ROOT, str(name))).convert("RGBA")
-            except OSError:
-                continue
-            k = self.logo_h / lg.height
-            lg = lg.resize((int(lg.width * k * S), int(lg.height * k * S)), Image.LANCZOS)
-            img.paste(lg, (sc(x) - (lg.width if right else 0), sc(top_y)), lg)
+        for spec, x, right in ((logos[0], left_x, False), (logos[1], right_x, True)):
+            lg = self._load_logo(spec)
+            if lg is not None:
+                img.paste(lg, (sc(x) - (lg.width if right else 0), sc(top_y)), lg)
         # core disc with magenta glow (static)
         disc = Image.new("RGB", img.size, (0, 0, 0))
         dd = ImageDraw.Draw(disc)
