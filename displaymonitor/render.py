@@ -172,6 +172,7 @@ class Renderer:
         self.header = bool(lc.get("header", False))   # compact layout by default (see docs/THEMING.md)
         self.clock = bool(lc.get("clock", True))        # compact layout: date + time at the top-left of the ring
         self.logo_h = float(lc.get("logo_h", 22))
+        self.logo_max_w = float(lc.get("logo_max_w", 90 if self.header else 46))   # wide logos shrink to fit the corner
         self._k = 1.0                       # vertical stretch of the card being drawn (compact layout)
         if self.header:                     # title + clock bar on top, logos in the top corners
             self.ring_c, self.rs = (118, 200), 1.0
@@ -343,8 +344,8 @@ class Renderer:
         except OSError as e:
             log.warning("cannot open logo %s: %s", spec, e)
             return None
-        k = self.logo_h / lg.height
-        return lg.resize((max(1, int(lg.width * k * S)), int(self.logo_h * S)), Image.LANCZOS)
+        k = min(self.logo_h / lg.height, self.logo_max_w / lg.width)        # fit both the height and the width budget
+        return lg.resize((max(1, int(lg.width * k * S)), max(1, int(lg.height * k * S))), Image.LANCZOS)
 
     def _build_background(self):
         t = self.t
@@ -376,11 +377,12 @@ class Renderer:
         if self.header:
             left_x, right_x, top_y = 14, W - 14, 9
         else:
-            left_x, right_x, top_y = cx - ring_r, cx + ring_r, 298 - self.logo_h
+            left_x, right_x, top_y = cx - ring_r, cx + ring_r, 298
         for spec, x, right in ((logos[0], left_x, False), (logos[1], right_x, True)):
             lg = self._load_logo(spec)
-            if lg is not None:
-                img.paste(lg, (sc(x) - (lg.width if right else 0), sc(top_y)), lg)
+            if lg is not None:             # header layout: top-aligned at top_y ; compact layout: bottom-aligned on y = top_y
+                y0 = sc(top_y) if self.header else sc(top_y) - lg.height
+                img.paste(lg, (sc(x) - (lg.width if right else 0), y0), lg)
         # core disc with magenta glow (static)
         disc = Image.new("RGB", img.size, (0, 0, 0))
         dd = ImageDraw.Draw(disc)

@@ -14,7 +14,7 @@ per **Windows 10/11**. Sostituisce `UsbMonitor.exe` del produttore con un piccol
 
 ![Tutte le pagine](docs/img/all_pages.png)
 
-*(gli screenshot usano dati inventati: `python -m displaymonitor --demo`)*
+*(gli screenshot usano dati inventati: `python tools/make_screenshots.py`. Ognuno mostra una coppia diversa di loghi — Intel / AMD Ryzen a sinistra, ASUS ROG / MSI / AORUS / NZXT a destra — solo per far vedere che i due loghi in basso si possono cambiare; i file dei loghi non fanno parte del repository.)*
 
 ## Pagine
 

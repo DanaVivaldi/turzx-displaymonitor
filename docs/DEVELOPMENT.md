@@ -14,7 +14,7 @@ displaymonitor/
 themes/         shipped theme presets (*.yaml) and their generated pictures (img/)
 config/         *.example.yaml (shipped) and your own config.yaml / pages.yaml (git‑ignored)
 scripts/        setup.ps1, install_autostart.ps1, uninstall_autostart.ps1
-tools/          bench / diagnostic scripts, make_montage.py, make_backgrounds.py (themes/img), make_gallery.py (docs/img/themes.png)
+tools/          bench / diagnostic scripts, import_logo.py, make_backgrounds.py (themes/img), make_screenshots.py (every image in docs/img)
 docs/           CONFIGURATION.md, PROTOCOL.md, DEVELOPMENT.md, img/ (demo screenshots)
 ```
 
@@ -52,11 +52,11 @@ docs/           CONFIGURATION.md, PROTOCOL.md, DEVELOPMENT.md, img/ (demo screen
 
 ## Testing without hardware
 
-`python -m displaymonitor --demo` renders every page from `demo.py` (no display, no admin, no sensors), `tools/make_montage.py` builds the README grid.
+`python -m displaymonitor --demo` renders every page from `demo.py` (no display, no admin, no sensors), `tools/make_screenshots.py` regenerates every image in `docs/img/` (pages, the README grid, the theme gallery) with invented data and a mix of logos from your library.
 `--preview` does the same with your real sensors. There is no automated test suite yet; PRs adding one (renderer snapshot tests, diff/rectangle tests on `Display._diff`) are welcome.
 
 ## Release checklist
 
-1. `python -m displaymonitor --demo && python tools/make_montage.py` and look at the pages;
+1. `python tools/make_screenshots.py` and look at the pages;
 2. clean exit + restart on a real display (`--send quit`, then start again);
 3. `scripts\setup.ps1` on a clean checkout in a fresh folder.

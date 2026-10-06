@@ -15,7 +15,7 @@ for **Windows 10/11**. It replaces the vendor's `UsbMonitor.exe` with a small Py
 
 ![All pages](docs/img/all_pages.png)
 
-*(screenshots are rendered with invented data: `python -m displaymonitor --demo`)*
+*(screenshots are rendered with invented data: `python tools/make_screenshots.py`. Each one shows a different pair of logos — Intel / AMD Ryzen on the left, ASUS ROG / MSI / AORUS / NZXT on the right — only to illustrate that the two bottom logos can be swapped; the logo files themselves are not part of the repository, see [THEMING.md](docs/THEMING.md#logos).)*
 
 ## Features
 

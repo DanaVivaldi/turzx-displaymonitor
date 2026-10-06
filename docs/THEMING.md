@@ -7,7 +7,7 @@ Everything about the look lives in two places:
 
 ![Shipped presets](img/themes.png)
 
-*(the six shipped presets, rendered with invented data and the compact layout: `python tools/make_gallery.py`)*
+*(the six shipped presets, rendered with invented data and the compact layout: `python tools/make_screenshots.py`; the logos in the corners are only there to illustrate that they can be swapped)*
 
 ## Quick start
 
@@ -115,6 +115,7 @@ Then choose them, any of these ways:
 ```yaml
 layout:
   logo_h: 26      # logo height in px (default 22); the width follows the picture
+  logo_max_w: 46  # ...but never wider than this: wide logos shrink to fit the corner
 ```
 
 **No logos are shipped.** AMD, Intel, NVIDIA, ASUS ROG, MSI … are trademarks and cannot be redistributed in an MIT repository, so the library is yours to fill:
@@ -136,7 +137,8 @@ Narrow, tabular‑figure fonts look best (numbers must not jump around). Sizes a
 |---|---|---|
 | `layout.header` | `false` | `false`: **compact layout** (default) — bigger ring and cards, big clock, logos at the ring's lower corners. `true`: top bar with page title, date/time and logos |
 | `layout.clock` | `true` | compact layout only: big 24 h time with the date below it (`Sat 03 Dec`, see `date_language`) at the top‑left; the legend is right‑aligned at the top, just before the cards |
-| `layout.logo_h` | `22` | logo height |
+| `layout.logo_h` | `22` | logo height in px |
+| `layout.logo_max_w` | `46` (`90` with the top bar) | maximum logo width in px: wide logos (NZXT, wordmarks) shrink to fit the corner |
 | `layout.ring_scale` | `1.15` | compact layout only: ring size |
 
 ## Sharing a theme
