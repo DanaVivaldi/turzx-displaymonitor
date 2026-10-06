@@ -7,7 +7,7 @@ Everything about the look lives in two places:
 
 ![Shipped presets](img/themes.png)
 
-*(the six shipped presets, rendered with invented data and the compact layout: `python tools/make_screenshots.py`; the logos in the corners are only there to illustrate that they can be swapped)*
+*(the seven shipped presets, rendered with invented data and the compact layout: `python tools/make_screenshots.py`; the logos in the corners are only there to illustrate that they can be swapped)*
 
 ## Quick start
 
@@ -15,7 +15,7 @@ Everything about the look lives in two places:
 
    ```yaml
    theme:
-     preset: nebula        # default | nebula | grid | ember | sunset | aurora
+     preset: nebula        # default | nebula | grid | ember | sunset | aurora | neon
    ```
 
    Restart the program (`python -m displaymonitor --send quit`, then start it again).

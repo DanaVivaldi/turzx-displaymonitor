@@ -16,7 +16,7 @@ from collections import deque
 
 import psutil
 
-from .weather import Weather
+from .weather import WMO, Weather
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +53,13 @@ def uptime_str(sec, lang="en"):
 
 
 class Sensors:
+    def set_language(self, cfg: dict):
+        """Day / month / weather names, e.g. "Sat 03 Dec" (en) or "sab 03 dic" (it). Also called on a config hot reload."""
+        lang = cfg.get("date_language") or cfg.get("language", "en")
+        self.lang = lang if lang in DAYS else "en"
+        if getattr(self, "weather", None) is not None:
+            self.weather.lang = self.lang if self.lang in WMO else "en"
+
     def __init__(self, cfg: dict):
         self.cfg = cfg
         s = cfg.get("sensors", {})
@@ -60,8 +67,7 @@ class Sensors:
         self.procs_s, self.ping_s = s.get("procs_s", 3.0), s.get("ping_s", 5.0)
         self.ping_host = cfg.get("network", {}).get("ping_host", "1.1.1.1")
         self.mb_ignore = {str(i) for i in s.get("mb_ignore_temps", [])}
-        lang = cfg.get("date_language") or cfg.get("language", "en")   # day / month names, e.g. "Sat 03 Dec" (en) or "sab 03 dic" (it)
-        self.lang = lang if lang in DAYS else "en"
+        self.set_language(cfg)
         self._lock = threading.Lock()
         self._state: dict = {}
         self._stop = threading.Event()

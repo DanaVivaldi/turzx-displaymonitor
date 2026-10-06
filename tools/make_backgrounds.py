@@ -8,7 +8,7 @@ import math
 import os
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "themes", "img")
@@ -124,6 +124,97 @@ def aurora():
     save(vignette(a, 0.55), "aurora.jpg")
 
 
+CY, BL, VI, PK = (0, 205, 255), (35, 95, 255), (150, 70, 255), (210, 80, 255)
+
+
+def _glow(layer, r1=3, r2=14, k1=0.9, k2=1.1):
+    a = layer.filter(ImageFilter.GaussianBlur(r1)); b = layer.filter(ImageFilter.GaussianBlur(r2))
+    out = ImageChops.add(layer, a.point(lambda v: int(v * k1)))
+    return ImageChops.add(out, b.point(lambda v: int(v * k2)))
+
+
+def neon():
+    """Blue / cyan / violet: angular cuts, hex grid and circuit traces (gaming-hardware flavour, no brand marks)."""
+    rng = np.random.default_rng(690)
+    # --- base: deep navy -> indigo diagonal gradient
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    t = np.clip((xx / W) * 0.45 + (yy / H) * 0.55, 0, 1)
+    stops = [(0.0, (4, 10, 34)), (0.45, (8, 20, 78)), (0.8, (28, 16, 92)), (1.0, (40, 14, 104))]
+    base = np.stack([np.interp(t, [p for p, _ in stops], [c[i] for _, c in stops]) for i in range(3)], -1)
+
+    # soft colour clouds
+    cl = Image.new("RGB", (W, H))
+    d = ImageDraw.Draw(cl)
+    for (x, y, r, col, a) in [(120, 520, 260, VI, .55), (860, 90, 280, CY, .40), (500, 330, 300, BL, .35), (880, 560, 220, PK, .35), (60, 80, 180, BL, .45)]:
+        d.ellipse((x - r, y - r, x + r, y + r), fill=tuple(int(c * a) for c in col))
+    cl = cl.filter(ImageFilter.GaussianBlur(90))
+    base = np.clip(base + np.asarray(cl, np.float32) * 0.55, 0, 255)
+    img = Image.fromarray(base.astype(np.uint8))
+
+    # --- hex grid, fading towards the top-right
+    hexl = Image.new("L", (W, H), 0); hd = ImageDraw.Draw(hexl)
+    s = 34; hh = s * math.sqrt(3)
+    for row in range(-1, int(H / hh) + 2):
+        for col in range(-1, int(W / (1.5 * s)) + 2):
+            cx = col * 1.5 * s; cy = row * hh + (hh / 2 if col % 2 else 0)
+            pts = [(cx + s * math.cos(math.radians(60 * i)), cy + s * math.sin(math.radians(60 * i))) for i in range(6)]
+            hd.line(pts + [pts[0]], fill=255, width=1)
+    fade = np.clip(((xx / W) * 0.9 + (1 - yy / H) * 0.5) - 0.35, 0, 1) ** 1.2
+    hexl = Image.fromarray((np.asarray(hexl, np.float32) * fade * 0.30).astype(np.uint8))
+    img = ImageChops.add(img, Image.merge("RGB", [hexl.point(lambda v: int(v * c / 255)) for c in (110, 190, 255)]))
+
+    # --- big angular slashes (ROG-style cuts)
+    def poly(layer_draw, pts, fill=None, line=None, w=2):
+        if fill: layer_draw.polygon(pts, fill=fill)
+        if line: layer_draw.line(pts + [pts[0]], fill=line, width=w)
+
+    fill = Image.new("RGB", (W, H)); fd = ImageDraw.Draw(fill)
+    edge = Image.new("RGB", (W, H)); ed = ImageDraw.Draw(edge)
+    slashes = [  # (points, fill colour, edge colour)
+        ([(-40, 470), (560, 160), (700, 160), (100, 520)], (26, 70, 190), CY),
+        ([(260, 700), (820, 330), (1000, 330), (440, 700)], (70, 36, 170), VI),
+        ([(560, -40), (780, -40), (560, 120), (480, 120)], (20, 80, 200), BL),
+        ([(-40, 120), (200, -40), (300, -40), (-40, 210)], (60, 30, 150), PK),
+    ]
+    for pts, f, e in slashes:
+        poly(fd, pts, fill=tuple(int(c * .55) for c in f))
+        poly(ed, pts, line=e, w=2)
+    img = ImageChops.add(img, fill.filter(ImageFilter.GaussianBlur(1)))
+    img = ImageChops.add(img, _glow(edge, 2, 10, .8, 1.0))
+    # thin parallel accent lines in the same 'ROG' direction
+    acc = Image.new("RGB", (W, H)); ad = ImageDraw.Draw(acc)
+    for i, (x0, col) in enumerate([(300, CY), (330, BL), (360, VI)]):
+        ad.line([(x0 + 90, 700), (x0 + 700, 120 - i * 0)], fill=tuple(int(c * .55) for c in col), width=1)
+    img = ImageChops.add(img, _glow(acc, 2, 8, .6, .7))
+
+    # --- circuit traces with nodes
+    tr = Image.new("RGB", (W, H)); td = ImageDraw.Draw(tr)
+    def trace(x, y, steps, col):
+        pts = [(x, y)]
+        for dx, dy in steps:
+            x += dx; y += dy; pts.append((x, y))
+        td.line(pts, fill=col, width=2)
+        td.ellipse((x - 5, y - 5, x + 5, y + 5), outline=col, width=2)
+        td.ellipse((pts[0][0] - 3, pts[0][1] - 3, pts[0][0] + 3, pts[0][1] + 3), fill=col)
+    c1 = tuple(int(c * .85) for c in CY); c2 = tuple(int(c * .85) for c in VI); c3 = tuple(int(c * .8) for c in BL)
+    trace(40, 600, [(120, 0), (60, -60), (0, -90)], c1)
+    trace(40, 560, [(70, 0), (40, -40), (0, -70), (60, -60)], c3)
+    trace(20, 612, [(200, 0), (50, -50), (140, 0)], c2)
+    trace(920, 40, [(-110, 0), (-60, 60), (0, 80)], c1)
+    trace(920, 80, [(-60, 0), (-40, 40), (0, 60), (-60, 60)], c2)
+    trace(940, 28, [(-190, 0), (-50, 50), (-120, 0)], c3)
+    trace(900, 610, [(-90, 0), (-50, -50), (0, -60)], c3)
+    img = ImageChops.add(img, _glow(tr, 1, 7, .9, .8))
+
+    # --- vignette, scanline texture, grain
+    a = np.asarray(img, np.float32)
+    d = np.sqrt(((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2)
+    a *= (1 - 0.5 * np.clip(d - 0.4, 0, 1))[..., None]
+    a *= (1 - 0.06 * (yy % 4 < 1))[..., None]
+    a += rng.normal(0, 2.0, a.shape)
+    save(a, "neon.jpg")
+
+
 if __name__ == "__main__":
-    for fn in (nebula, grid, carbon, sunset, aurora):
+    for fn in (nebula, grid, carbon, sunset, aurora, neon):
         fn()

@@ -1,0 +1,5 @@
+# Blue / cyan / violet with angular cuts, hex grid and circuit traces; translucent cards.
+background: themes/img/neon.jpg
+background_dim: 0.12
+panel_opacity: 0.78
+ring_backdrop: true

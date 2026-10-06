@@ -148,6 +148,7 @@ class App:
         self._config_logos = tuple(renderer.t["logos"])
         self._load_state()
         self.display.configure(cfg.get("display", {}))
+        self.sensors.set_language(cfg)
         log.info("configuration reloaded (%s): %d pages, theme preset %s", reason, len(pages), (cfg.get("theme") or {}).get("preset"))
 
     def _load_state(self):

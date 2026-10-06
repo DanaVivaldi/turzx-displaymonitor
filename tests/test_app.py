@@ -44,3 +44,13 @@ def test_weather_is_off_by_default_and_codes_are_translated():
     w._publish({"temperature_2m": 20.5, "weather_code": 3}, 0.0)
     snap = w.snapshot()
     assert snap["weather_temp"] == 20.5 and snap["weather_desc"] == "Coperto" and snap["weather_city"] == "X"
+
+
+def test_date_language_can_change_without_restart():
+    from displaymonitor.sensors import Sensors
+    s = Sensors({"language": "it", "date_language": "en"})
+    assert s.lang == "en"
+    s.set_language({"language": "it", "date_language": "it"})
+    assert s.lang == "it" and s.weather.lang == "it"
+    s.set_language({"language": "xx"})
+    assert s.lang == "en"
