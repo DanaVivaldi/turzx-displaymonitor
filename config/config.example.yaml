@@ -19,7 +19,7 @@ display:
   flood_bytes: 2200000 # after an abnormal exit / link error: zero bytes that complete a half-sent bitmap (~13 s)
   reset_on_connect: false  # the RESET command has no visible effect on the tested unit
   refresh_band: 8      # rows resent on every frame, cycling over the screen: heals corrupted pixels (0 = off)
-  brightness: 200      # 0-255 (raw firmware value)
+  brightness: 100      # backlight in percent, 0-100 (100 = brightest); applied at every start
   tile: 2              # granularity (px) of the change detection
   merge_gap: 4         # merge changed rectangles closer than this many px
 
@@ -49,6 +49,7 @@ sensors:
   storage_s: 10
   procs_s: 3
   ping_s: 5
+  ram_temp: false      # RAM module temperatures from the DIMMs' SPD sensors (needs PawnIO; can clash with iCUE / Armoury). Keys: ram_temp, ram_temps_str
   mb_ignore_temps: []  # motherboard probes that read garbage (unconnected), e.g. [5] hides "Temperature #5"
 
 # Optional weather page (Open-Meteo: free, no account / key). The only request is a GET to api.open-meteo.com with your coordinates.

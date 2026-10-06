@@ -92,3 +92,15 @@ def test_show_rotates_landscape_into_portrait_and_sends_a_full_frame_first():
     d._ser.chunks.clear()
     assert d.show(frame.copy()) is True                  # nothing changed: nothing sent
     assert d._ser.chunks == []
+
+
+def test_brightness_is_a_percentage_and_the_firmware_scale_is_inverted():
+    d = Display({"brightness": 100})
+    assert d.brightness == 100 and d.raw_brightness() == 0          # 100 % -> raw 0 (brightest)
+    d.set_brightness(0)
+    assert d.raw_brightness() == 255                                # 0 % -> raw 255 (darkest)
+    d.set_brightness(60)
+    assert d.raw_brightness() == round(255 - 60 * 2.55)
+    d.set_brightness(250)
+    assert d.brightness == 100                                      # clamped
+    assert Display({}).brightness == 100                            # default: brightest

@@ -3,6 +3,7 @@ import datetime
 import math
 
 from .sensors import DAYS, MONTHS
+from .weather import WMO
 
 
 def demo_snapshot(lang: str = "en") -> dict:
@@ -34,7 +35,7 @@ def demo_snapshot(lang: str = "en") -> dict:
         "gpu_vram_used": 7.4, "gpu_vram_total": 12.0, "gpu_vram_pct": 61.7, "gpu_clock": 2475.0, "gpu_mem_clock": 10500.0,
         "gpu_fan": 1450.0, "gpu_fan_pct": 48.0,
         # memory
-        "mem_used": 21.3, "mem_total": 32.0, "mem_avail": 10.7, "mem_pct": 66.6,
+        "ram_temp": 43.0, "ram_temp_avg": 42.4, "ram_temps_str": "43 44 43 41", "mem_used": 21.3, "mem_total": 32.0, "mem_avail": 10.7, "mem_pct": 66.6,
         "vmem_used": 1.1, "vmem_total": 4.0, "vmem_pct": 27.5,
         # motherboard
         "mb_name": "Example Board", "mb_t1": 38.0, "mb_t2": 41.0, "mb_t4": 29.0, "mb_t6": 35.0, "mb_t_max": 41.0,
@@ -51,8 +52,8 @@ def demo_snapshot(lang: str = "en") -> dict:
         "net_down_val": "205", "net_down_unit": "KB/s", "net_down_str": "205 KB/s",
         "net_up_val": "32.0", "net_up_unit": "KB/s", "net_up_str": "32.0 KB/s", "net_down_pct": 62.0, "net_up_pct": 38.0,
         # system
-        "weather_city": "My town", "weather_temp": 21.4, "weather_feels": 20.1, "weather_humidity": 58.0, "weather_wind": 12.0,
-        "weather_code": 2, "weather_desc": "Partly cloudy", "weather_age_min": 7.0,
+        "weather_city": "My town" if lang == "en" else "La mia città", "weather_temp": 21.4, "weather_feels": 20.1, "weather_humidity": 58.0, "weather_wind": 12.0,
+        "weather_code": 2, "weather_desc": WMO.get(lang, WMO["en"])[2], "weather_age_min": 7.0,
         "sys_uptime": 3 * 86400 + 5 * 3600, "uptime_str": "3d 05h" if lang == "en" else "3g 05h", "sys_procs": 214,
         "proc_cpu": [{"name": "game", "cpu": 21.4, "mem_mb": 5200}, {"name": "browser", "cpu": 6.8, "mem_mb": 3100},
                      {"name": "code", "cpu": 3.2, "mem_mb": 1200}, {"name": "chat", "cpu": 1.1, "mem_mb": 800}],

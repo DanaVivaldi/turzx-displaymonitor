@@ -32,7 +32,8 @@ def test_config_signature_is_a_stable_tuple():
 
 def test_formatting_helpers():
     assert rate_str(500) == ("500", "B/s") and rate_str(1500) == ("1.5", "KB/s") and rate_str(2_500_000)[1] == "MB/s"
-    assert uptime_str(3 * 86400 + 5 * 3600) == "3g 05h" and uptime_str(4500) == "1h 15m"
+    assert uptime_str(3 * 86400 + 5 * 3600) == "3d 05h" and uptime_str(3 * 86400 + 5 * 3600, "it") == "3g 05h"
+    assert uptime_str(4500) == "1h 15m"
 
 
 def test_weather_is_off_by_default_and_codes_are_translated():

@@ -1,58 +1,56 @@
-# Pages. Common layout: a ring on the left (ring) + up to three cards on the right (cards).
-# Copy this file to config/pages.yaml and edit it; config/pages.yaml is git-ignored (your own pages).
-# Text:    "{key:format}", e.g. "{cpu_temp:.0f}°C". Missing values show "--".
-# Colours: a spec is "text" or {text, value, warn, crit, color}. Temperatures and % utilisation are coloured
-#          automatically (see theme.scale in config.yaml); other values can use warn (amber) / crit (magenta).
-# Cards:   kind = main | stats | list | spark.   h = height in px (all cards + 8 px between them <= 246).
-# Full reference: docs/CONFIGURATION.md
+# PACCHETTO ITALIANO - pagine. Copia questo file in config/pages.yaml (oppure: python -m displaymonitor --init it).
+# Pagine. Schema comune: anello a sinistra (ring) + schede a destra (cards).
+# Testi: {chiave:formato}, es. "{cpu_temp:.0f}°C". Valori mancanti -> "--".
+# Colori: spec = "testo"  oppure  {text, value, warn, crit, color}  (warn -> ambra, crit -> magenta).
+# Schede: kind = main | stats | list | spark.   h = altezza in px (totale schede + 8 px tra l'una e l'altra <= 246).
 
 pages:
 
   # ------------------------------------------------------------------------------------------
   - id: overview
-    title: OVERVIEW
+    title: PANORAMICA
     ring:
-      segments: cpu_threads      # one square per thread: colour and brightness follow that thread's load
+      segments: cpu_threads      # un quadrato per thread: colore e luminosita' seguono il carico di quel thread
       seg_max: 100
       seg_color: heat
-      legend:                    # top-left, outside the ring
+      legend:                    # in alto a sinistra, fuori dall'anello. line:N = N-esimo anello sottile dall'esterno
         - {icon: square, text: "Core"}
-        - {icon: dash, text: "% CPU"}      # the three thin rings, outside -> inside: CPU load, CPU temperature, RAM used
+        - {icon: dash, text: "% CPU"}      # i tre anelli sottili, dall'esterno all'interno: % CPU, °C CPU, % RAM
         - {icon: dash, text: "CPU °C"}
         - {icon: dash, text: "% RAM"}
       arcs:
-        # outside -> inside: CPU load, CPU temperature, RAM used. Colour = level (cyan .. red).
+        # dall'esterno all'interno: carico CPU, temperatura CPU, RAM occupata. Colore = livello (azzurro..rosso).
         - {value: cpu_load, min: 0, max: 100, color: heat, radius: 77, width: 5}
         - {value: cpu_temp, min: 30, max: 95, color: heat, radius: 69, width: 5}
         - {value: mem_pct, min: 0, max: 100, color: heat, radius: 61, width: 5}
       center:
         label: CPU
         big: {text: "{cpu_load:.0f}%", value: cpu_load}
-        line1: {text: "{cpu_temp:.0f}°C", value: cpu_temp}
+        line1: {text: "{cpu_temp:.0f}°C", value: cpu_temp, warn: 75, crit: 90}
         line2: "{cpu_power:.0f} W · {cpu_clock:.2f} GHz"
     cards:
       - kind: main
         h: 78
         title: "GPU · {gpu_short}"
-        big: {text: "{gpu_load:.0f}%", value: gpu_load}
-        mid: {text: "{gpu_temp:.0f}°C", value: gpu_temp}
+        big: {text: "{gpu_load:.0f}%", value: gpu_load, warn: 90, crit: 99}
+        mid: {text: "{gpu_temp:.0f}°C", value: gpu_temp, warn: 75, crit: 85}
         right: ["{gpu_power:.0f} W", "{gpu_vram_used:.1f} / {gpu_vram_total:.0f} GB"]
         bar: {value: gpu_load, max: 100, color: heat}
       - kind: main
         h: 66
         title: RAM
-        big: {text: "{mem_pct:.0f}%", value: mem_pct}
-        mid: {text: "{ram_temp:.0f}°C", value: ram_temp}      # RAM module temperature (needs sensors.ram_temp: true)
+        big: {text: "{mem_pct:.0f}%", value: mem_pct, warn: 85, crit: 95}
+        mid: {text: "{ram_temp:.0f}°C", value: ram_temp}
         right: ["{mem_used:.1f} / {mem_total:.0f} GB"]
         bar: {value: mem_pct, max: 100, color: heat}
       - kind: stats
         h: 82
-        title: DISKS · BOARD · NETWORK
+        title: DISCHI · SCHEDA · RETE
         items:
-          - {label: NVMe, text: "{disk_max_nvme:.0f}°C", value: disk_max_nvme}
-          - {label: SSD, text: "{disk_max_ssd:.0f}°C", value: disk_max_ssd}
-          - {label: HDD, text: "{disk_max_hdd:.0f}°C", value: disk_max_hdd}
-          - {label: Board, text: "{mb_t_max:.0f}°C", value: mb_t_max}
+          - {label: NVMe, text: "{disk_max_nvme:.0f}°C", value: disk_max_nvme, warn: 60, crit: 70}
+          - {label: SSD, text: "{disk_max_ssd:.0f}°C", value: disk_max_ssd, warn: 55, crit: 65}
+          - {label: HDD, text: "{disk_max_hdd:.0f}°C", value: disk_max_hdd, warn: 45, crit: 55}
+          - {label: Scheda, text: "{mb_t_max:.0f}°C", value: mb_t_max, warn: 60, crit: 75}
         footer:
           left: {text: "{net_down_str}", marker: down}
           right: {text: "{net_up_str}", marker: up}
@@ -61,28 +59,29 @@ pages:
   - id: cpu
     title: CPU
     ring:
-      segments: cpu_threads
+      segments: cpu_threads      # un quadrato per thread: colore e luminosita' seguono il carico di quel thread
       seg_max: 100
       seg_color: heat
-      legend:
+      legend:                    # in alto a sinistra, fuori dall'anello. line:N = N-esimo anello sottile dall'esterno
         - {icon: square, text: "Core"}
-        - {icon: dash, text: "% CPU"}
+        - {icon: dash, text: "% CPU"}      # i tre anelli sottili, dall'esterno all'interno: % CPU, °C CPU, % RAM
         - {icon: dash, text: "CPU °C"}
         - {icon: dash, text: "% RAM"}
       arcs:
+        # dall'esterno all'interno: carico CPU, temperatura CPU, RAM occupata. Colore = livello (azzurro..rosso).
         - {value: cpu_load, min: 0, max: 100, color: heat, radius: 77, width: 5}
         - {value: cpu_temp, min: 30, max: 95, color: heat, radius: 69, width: 5}
         - {value: mem_pct, min: 0, max: 100, color: heat, radius: 61, width: 5}
       center:
         label: "{cpu_name}"
         big: {text: "{cpu_load:.0f}%", value: cpu_load}
-        line1: {text: "{cpu_temp:.0f}°C", value: cpu_temp}
+        line1: {text: "{cpu_temp:.0f}°C", value: cpu_temp, warn: 75, crit: 90}
         line2: "{cpu_power:.0f} W"
     cards:
       - kind: main
         h: 78
-        title: PACKAGE TEMPERATURE
-        big: {text: "{cpu_temp:.0f}°C", value: cpu_temp}
+        title: TEMPERATURA PACKAGE
+        big: {text: "{cpu_temp:.0f}°C", value: cpu_temp, warn: 75, crit: 90}
         mid: {text: "max {cpu_temp_max:.0f}°C", value: cpu_temp_max}
         right:
           - {text: "P {cpu_p_temp:.0f}°C", value: cpu_p_temp}
@@ -90,14 +89,14 @@ pages:
         bar: {value: cpu_temp, min: 30, max: 100, color: heat}
       - kind: stats
         h: 66
-        title: CLOCKS · POWER
+        title: FREQUENZE · POTENZA
         items:
           - {label: P-core, text: "{cpu_clock:.2f} GHz"}
           - {label: E-core, text: "{cpu_clock_e:.2f} GHz"}
-          - {label: Power, text: "{cpu_power:.0f} W"}
+          - {label: Potenza, text: "{cpu_power:.0f} W"}
       - kind: list
         h: 82
-        title: CORE TEMPERATURES (°C)
+        title: TEMPERATURE CORE (°C)
         row_h: 24
         rows:
           - {label: "P-core", text: "{cpu_p_temps_str}", value: cpu_p_temp}
@@ -106,7 +105,7 @@ pages:
   # ------------------------------------------------------------------------------------------
   - id: gpu
     title: GPU
-    # logos: [geforce, gigabyte]   # optional: this page's own two logos (names from the logo library); other pages use theme.logos
+    # logos: [geforce, gigabyte]   # opzionale: i due loghi di questa pagina (nomi della libreria); le altre pagine usano theme.logos
     ring:
       arcs:
         - {value: gpu_load, min: 0, max: 100, color: heat, radius: 90, width: 11}
@@ -115,36 +114,35 @@ pages:
       center:
         label: "{gpu_short}"
         big: {text: "{gpu_load:.0f}%", value: gpu_load}
-        line1: {text: "{gpu_temp:.0f}°C", value: gpu_temp}
+        line1: {text: "{gpu_temp:.0f}°C", value: gpu_temp, warn: 75, crit: 85}
         line2: "{gpu_power:.0f} W"
     cards:
       - kind: main
         h: 78
-        title: TEMPERATURE
-        big: {text: "{gpu_temp:.0f}°C", value: gpu_temp}
+        title: TEMPERATURA
+        big: {text: "{gpu_temp:.0f}°C", value: gpu_temp, warn: 75, crit: 85}
         mid: {text: "HS {gpu_hotspot:.0f}°C", value: gpu_hotspot}
         right: ["fan {gpu_fan_pct:.0f}%"]
         bar: {value: gpu_temp, min: 30, max: 100, color: heat}
       - kind: main
         h: 66
         title: VRAM
-        big: {text: "{gpu_vram_pct:.0f}%", value: gpu_vram_pct}
+        big: {text: "{gpu_vram_pct:.0f}%", value: gpu_vram_pct, warn: 85, crit: 95}
         right: ["{gpu_vram_used:.1f} / {gpu_vram_total:.0f} GB"]
         bar: {value: gpu_vram_pct, max: 100, color: heat}
       - kind: stats
         h: 66
-        title: CLOCKS · POWER
+        title: CLOCK · POTENZA
         items:
           - {label: Core, text: "{gpu_clock:.0f} MHz"}
-          - {label: Memory, text: "{gpu_mem_clock:.0f} MHz"}
-          - {label: Power, text: "{gpu_power:.0f} W"}
+          - {label: Memoria, text: "{gpu_mem_clock:.0f} MHz"}
+          - {label: Potenza, text: "{gpu_power:.0f} W"}
 
   # ------------------------------------------------------------------------------------------
-  # Motherboard temperatures have no official names: T1..T6 are the raw Super I/O sensors.
-  # Compare them with your BIOS and rename the labels below. Probes that are not connected read garbage:
-  # hide them with sensors.mb_ignore_temps in config.yaml.
+  # Le temperature della scheda madre non hanno un nome ufficiale: T1..T6 sono i sensori del Super I/O
+  # (T5 e' una sonda scollegata, non viene mostrata). Rinominali qui sotto dopo averli confrontati col BIOS.
   - id: motherboard
-    title: MOTHERBOARD
+    title: SCHEDA MADRE
     ring:
       segments: mb_fan_duties
       seg_max: 100
@@ -152,21 +150,21 @@ pages:
         - {value: mb_t_max, min: 30, max: 100, color: heat, radius: 72, width: 5}
       center:
         label: "{mb_name}"
-        big: {text: "{mb_t_max:.0f}°C", value: mb_t_max}
+        big: {text: "{mb_t_max:.0f}°C", value: mb_t_max, warn: 60, crit: 75}
         line1: "Vcore {mb_vcore:.3f} V"
-        line2: "{mb_fan_count} fans running"
+        line2: "{mb_fan_count} ventole attive"
     cards:
       - kind: stats
         h: 66
-        title: TEMPERATURES
+        title: TEMPERATURE
         items:
-          - {label: "T1", text: "{mb_t1:.0f}°C", value: mb_t1}
-          - {label: "T2", text: "{mb_t2:.0f}°C", value: mb_t2}
-          - {label: "T4", text: "{mb_t4:.0f}°C", value: mb_t4}
-          - {label: "T6", text: "{mb_t6:.0f}°C", value: mb_t6}
+          - {label: "T1", text: "{mb_t1:.0f}°C", value: mb_t1, warn: 60, crit: 75}
+          - {label: "T2", text: "{mb_t2:.0f}°C", value: mb_t2, warn: 60, crit: 75}
+          - {label: "T4", text: "{mb_t4:.0f}°C", value: mb_t4, warn: 60, crit: 75}
+          - {label: "T6", text: "{mb_t6:.0f}°C", value: mb_t6, warn: 60, crit: 75}
       - kind: list
         h: 92
-        title: FANS
+        title: VENTOLE
         rows_from: mb_fans
         slice: [0, 3]
         row_h: 21
@@ -176,7 +174,7 @@ pages:
           bar: {value: pct, max: 100}
       - kind: stats
         h: 66
-        title: VOLTAGES
+        title: TENSIONI
         items:
           - {label: Vcore, text: "{mb_vcore:.2f} V"}
           - {label: "+3.3V", text: "{mb_v33:.2f} V"}
@@ -185,7 +183,7 @@ pages:
 
   # ------------------------------------------------------------------------------------------
   - id: disks
-    title: DISKS
+    title: DISCHI
     ring:
       segments: disk_temps
       seg_max: 70
@@ -193,14 +191,14 @@ pages:
       seg_warn: 55
       seg_crit: 70
       center:
-        label: DISKS
-        big: {text: "{disk_temp_max:.0f}°C", value: disk_temp_max}
-        line1: "{disk_count} drives"
+        label: DISCHI
+        big: {text: "{disk_temp_max:.0f}°C", value: disk_temp_max, warn: 55, crit: 70}
+        line1: "{disk_count} unità"
         line2: "R {disk_read_mbs:.1f} · W {disk_write_mbs:.1f} MB/s"
     cards:
       - kind: list
         h: 78
-        title: DRIVES 1 - 2
+        title: UNITÀ 1 - 2
         rows_from: disks
         slice: [0, 2]
         row_h: 24
@@ -208,10 +206,12 @@ pages:
           label: "{short}"
           text: "{temp:.0f}°C{used_str}"
           value: temp
+          warn: 55
+          crit: 70
           bar: {value: used_pct, max: 100, color: heat}
       - kind: list
         h: 78
-        title: DRIVES 3 - 4
+        title: UNITÀ 3 - 4
         rows_from: disks
         slice: [2, 4]
         row_h: 24
@@ -219,10 +219,12 @@ pages:
           label: "{short}"
           text: "{temp:.0f}°C{used_str}"
           value: temp
+          warn: 55
+          crit: 70
           bar: {value: used_pct, max: 100, color: heat}
       - kind: list
         h: 78
-        title: DRIVES 5 - 6
+        title: UNITÀ 5 - 6
         rows_from: disks
         slice: [4, 6]
         row_h: 24
@@ -230,37 +232,39 @@ pages:
           label: "{short}"
           text: "{temp:.0f}°C{used_str}"
           value: temp
+          warn: 55
+          crit: 70
           bar: {value: used_pct, max: 100, color: heat}
 
   # ------------------------------------------------------------------------------------------
   - id: memory
-    title: MEMORY
+    title: MEMORIA
     ring:
       arcs:
         - {value: mem_pct, min: 0, max: 100, color: heat, radius: 90, width: 11}
         - {value: vmem_pct, min: 0, max: 100, color: heat, radius: 76, width: 8}
       center:
         label: RAM
-        big: {text: "{mem_pct:.0f}%", value: mem_pct}
+        big: {text: "{mem_pct:.0f}%", value: mem_pct, warn: 85, crit: 95}
         line1: "{mem_used:.1f} GB"
-        line2: "of {mem_total:.0f} GB"
+        line2: "di {mem_total:.0f} GB"
     cards:
       - kind: main
         h: 66
-        title: PHYSICAL RAM
-        big: {text: "{mem_pct:.0f}%", value: mem_pct}
+        title: RAM FISICA
+        big: {text: "{mem_pct:.0f}%", value: mem_pct, warn: 85, crit: 95}
         mid: {text: "{ram_temp:.0f}°C", value: ram_temp}
         right: ["{mem_used:.1f} / {mem_total:.0f} GB"]
         bar: {value: mem_pct, max: 100, color: heat}
       - kind: main
         h: 66
-        title: PAGE FILE
-        big: {text: "{vmem_pct:.0f}%", value: vmem_pct}
+        title: FILE DI PAGING
+        big: {text: "{vmem_pct:.0f}%", value: vmem_pct, warn: 85, crit: 95}
         right: ["{vmem_used:.1f} / {vmem_total:.0f} GB"]
         bar: {value: vmem_pct, max: 100, color: heat}
       - kind: list
         h: 90
-        title: TOP PROCESSES (RAM)
+        title: PROCESSI PIÙ PESANTI
         rows_from: proc_mem
         slice: [0, 3]
         row_h: 21
@@ -271,7 +275,7 @@ pages:
 
   # ------------------------------------------------------------------------------------------
   - id: network
-    title: NETWORK
+    title: RETE
     ring:
       arcs:
         - {value: net_down_pct, min: 0, max: 100, color: cyan, radius: 90, width: 11}
@@ -296,7 +300,7 @@ pages:
         color: magenta
       - kind: stats
         h: 66
-        title: CONNECTION
+        title: CONNESSIONE
         items:
           - {label: IP, text: "{net_ip}"}
           - {label: Ping, text: "{ping_ms:.0f} ms", value: ping_ms, warn: 60, crit: 150}
@@ -304,7 +308,7 @@ pages:
 
   # ------------------------------------------------------------------------------------------
   - id: system
-    title: SYSTEM
+    title: SISTEMA
     ring:
       segments: clock_seconds
       seg_max: 100
@@ -317,7 +321,7 @@ pages:
     cards:
       - kind: list
         h: 104
-        title: TOP PROCESSES (CPU)
+        title: PROCESSI PIÙ ATTIVI (CPU)
         rows_from: proc_cpu
         slice: [0, 4]
         row_h: 21
@@ -329,19 +333,19 @@ pages:
         h: 62
         title: UPTIME
         big: "{uptime_str}"
-        right: ["{sys_procs} processes"]
+        right: ["{sys_procs} processi"]
       - kind: stats
         h: 56
-        title: LOAD
+        title: CARICO
         items:
-          - {label: CPU, text: "{cpu_load:.0f}%", value: cpu_load}
-          - {label: GPU, text: "{gpu_load:.0f}%", value: gpu_load}
-          - {label: RAM, text: "{mem_pct:.0f}%", value: mem_pct}
+          - {label: CPU, text: "{cpu_load:.0f}%", value: cpu_load, warn: 85, crit: 95}
+          - {label: GPU, text: "{gpu_load:.0f}%", value: gpu_load, warn: 90, crit: 99}
+          - {label: RAM, text: "{mem_pct:.0f}%", value: mem_pct, warn: 85, crit: 95}
 
   # ------------------------------------------------------------------------------------------
-  # Weather (Open-Meteo). Hidden unless `weather: {enabled: true, latitude, longitude}` is set in config.yaml.
+  # Meteo (Open-Meteo). Nascosta finche' in config.yaml non c'e' `weather: {enabled: true, latitude, longitude}`.
   - id: weather
-    title: WEATHER
+    title: METEO
     requires: weather
     ring:
       arcs:
@@ -350,22 +354,22 @@ pages:
         label: "{weather_city}"
         big: "{weather_temp:.0f}°"
         line1: "{weather_desc}"
-        line2: "feels {weather_feels:.0f}°"
+        line2: "percepita {weather_feels:.0f}°"
     cards:
       - kind: main
         h: 78
-        title: TEMPERATURE
+        title: TEMPERATURA
         big: "{weather_temp:.1f}°C"
-        mid: "feels {weather_feels:.0f}°C"
+        mid: "perc. {weather_feels:.0f}°C"
         bar: {value: weather_temp, min: -10, max: 40, color: cyan}
       - kind: main
         h: 66
-        title: HUMIDITY
+        title: UMIDITÀ
         big: "{weather_humidity:.0f}%"
         bar: {value: weather_humidity, max: 100, color: cyan}
       - kind: stats
         h: 66
-        title: WIND
+        title: VENTO
         items:
-          - {label: Speed, text: "{weather_wind:.0f} km/h"}
-          - {label: Updated, text: "{weather_age_min:.0f} min ago"}
+          - {label: Velocità, text: "{weather_wind:.0f} km/h"}
+          - {label: Aggiornato, text: "{weather_age_min:.0f} min fa"}

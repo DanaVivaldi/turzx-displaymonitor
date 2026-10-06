@@ -5,6 +5,25 @@ Two files, both optional copies of the shipped examples (created by `scripts\set
 * `config/config.yaml` — general settings (display, refresh, thresholds, network, alerts). Example: [`config.example.yaml`](../config/config.example.yaml)
 * `config/pages.yaml` — the pages. Example: [`pages.example.yaml`](../config/pages.example.yaml)
 
+## Language packs
+
+Two ready-made, equivalent packs ship with the program:
+
+| Pack | Files | Contents |
+|---|---|---|
+| English | `config.example.yaml`, `pages.example.yaml` | English page titles/labels, `language: en` |
+| Italiano | `config.it.example.yaml`, `pages.it.example.yaml` | titoli, etichette, menu della tray e meteo in italiano, `language: it` |
+
+```powershell
+python -m displaymonitor --init it            # install the Italian pack as config/config.yaml + pages.yaml
+python -m displaymonitor --init en --force    # switch to English (existing files are kept as *.bak)
+python -m displaymonitor --demo --lang it     # render the Italian pack with invented data to docs/img/it
+```
+
+`--init` refuses to overwrite your files unless `--force` is given. `scripts\setup.ps1` runs it for you (`-Language en|it`).
+Pack files are plain YAML: to add another language copy one, translate it and add the code to `LANGUAGES` in `displaymonitor/app.py`
+(plus tray texts in `tray.py` and day/month/weather names in `sensors.py` / `weather.py`).
+
 If your own file is missing the example is used. Changes take effect after a restart:
 `python -m displaymonitor --send quit`, wait ~4 s, then start it again (scheduled task: `Start-ScheduledTask DisplayMonitor`).
 `python -m displaymonitor --preview` / `--demo` renders PNGs so you can check a page without the display.
@@ -19,7 +38,7 @@ If your own file is missing the example is used. Changes take effect after a res
 | `layout.logo_h` | `22` | logo height in px |
 | `layout.ring_scale` | `1.15` | compact layout only: ring size relative to the default |
 | `display.rotate` | `1` | software rotation (`np.rot90` steps): `1` or `3` depending on mounting |
-| `display.brightness` | `200` | raw firmware value 0–255 |
+| `display.brightness` | `100` | backlight in **percent**, 0–100 (100 = brightest), applied at every start. (The firmware's own scale is inverted — 0 brightest, 255 darkest — the program converts.) Also tray *Brightness* and `--send brightness:60` |
 | `display.tile` / `merge_gap` | `2` / `4` | change‑detection tile and rectangle merging, in px |
 | `display.max_block_px` | `12800` | maximum pixels per bitmap command |
 | `display.refresh_band` | `8` | rows resent every frame, cycling (self‑healing); `0` = off |
@@ -37,6 +56,7 @@ If your own file is missing the example is used. Changes take effect after a res
 | `network.interface` | `auto` | adapter name, or `auto` (the busiest adapter that has an IPv4 address, virtual ones excluded) |
 | `network.ping_host` | `1.1.1.1` | target of the ping shown on the network page |
 | `sensors.*_s` | 1 / 10 / 3 / 5 | polling period of the fast sensors, storage, processes, ping |
+| `sensors.ram_temp` | `false` | read the RAM modules' temperatures from their SPD sensors (`ram_temp` = hottest module, `ram_temps_str`): needs PawnIO and DDR5 (or DDR4 with a thermal sensor); can clash with iCUE / Armoury Crate, so it is opt-in |
 | `sensors.mb_ignore_temps` | `[]` | motherboard probe numbers to hide (unconnected probes read garbage) |
 | `alerts` | see example | `{page, when, hold_s}`: when the Python expression is true the page is shown for `hold_s` seconds |
 
@@ -111,7 +131,7 @@ Run `python -m displaymonitor --dump-sensors` to see the live values (and `--dem
 |---|---|
 | CPU | `cpu_name`, `cpu_load`, `cpu_threads` (list), `cpu_temp` (package), `cpu_temp_max`, `cpu_p_temp`, `cpu_e_temp`, `cpu_p_temps_str`, `cpu_e_temps_str`, `cpu_clock` (best P‑core, GHz), `cpu_clock_e`, `cpu_power` (W) |
 | GPU | `gpu_short`, `gpu_load`, `gpu_temp`, `gpu_hotspot`, `gpu_power`, `gpu_clock`, `gpu_mem_clock`, `gpu_fan`, `gpu_fan_pct`, `gpu_vram_used` / `_total` (GB), `gpu_vram_pct` |
-| Memory | `mem_used`, `mem_total`, `mem_avail` (GiB), `mem_pct`, `vmem_used`, `vmem_total`, `vmem_pct` (page file) |
+| Memory | `mem_used`, `mem_total`, `mem_avail` (GiB), `mem_pct`, `ram_temp` / `ram_temps_str` (opt-in), `vmem_used`, `vmem_total`, `vmem_pct` (page file) |
 | Motherboard | `mb_name`, `mb_t1`, `mb_t2`, `mb_t4`, … (raw Super I/O probes), `mb_t_max`, `mb_fans` (list of `{name, rpm, pct}`), `mb_fan_count`, `mb_fan_duties` (list), `mb_vcore`, `mb_v33`, `mb_v3sb`, `mb_vbat`, `mb_avcc` |
 | Disks | `disks` (list of `{name, short, kind, temp, used_pct, used_str, total_gb}`), `disk_count`, `disk_temps` (list), `disk_temp_max`, `disk_max_nvme` / `_ssd` / `_hdd`, `disk_read_mbs`, `disk_write_mbs` |
 | Network | `net_name`, `net_ip`, `net_speed`, `ping_ms`, `net_down`, `net_up` (B/s), `net_down_str`, `net_up_str`, `net_down_val`/`_unit`, `net_up_val`/`_unit`, `net_down_hist`, `net_up_hist` (lists), `net_down_pct`, `net_up_pct` |
@@ -141,7 +161,7 @@ Any page can use `requires: weather` (or a list) to appear only when that featur
 
 ```
 python -m displaymonitor                    run
-python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | reload | page:<id> | brightness:<0-255> | logo:left:<name> | logo:right:<name|none> | logo:reset
+python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | reload | page:<id> | brightness:<0-100> | logo:left:<name> | logo:right:<name|none> | logo:reset
 python -m displaymonitor --preview          PNGs with real sensors  -> docs/preview/
 python -m displaymonitor --demo             PNGs with invented data -> docs/img/
 python -m displaymonitor --demo --theme ember --compact     try a theme preset / the compact layout

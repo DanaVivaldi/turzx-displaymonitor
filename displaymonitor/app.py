@@ -16,15 +16,48 @@ log = logging.getLogger(__name__)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def load_config(examples: bool = False):
+LANGUAGES = ("en", "it")          # shipped language packs: config/config.<lang>.example.yaml + config/pages.<lang>.example.yaml
+
+
+def example_path(name: str, lang: str | None = None) -> str:
+    """config/pages.yaml -> config/pages.<lang>.example.yaml (the language pack) or, for English / unknown, config/pages.example.yaml."""
+    stem = name[:-len(".yaml")]
+    if lang and lang != "en":
+        p = os.path.join(ROOT, "config", f"{stem}.{lang}.example.yaml")
+        if os.path.exists(p):
+            return p
+    return os.path.join(ROOT, "config", f"{stem}.example.yaml")
+
+
+def load_config(examples: bool = False, lang: str | None = None):
     """config/config.yaml and config/pages.yaml are your own (git-ignored) files; if they do not exist the
-    shipped config/*.example.yaml are used, so a fresh checkout works out of the box (examples=True forces them)."""
+    shipped examples are used, so a fresh checkout works out of the box (examples=True forces them).
+    `lang` picks the language pack ("en" or "it") when an example is used."""
     def read(name):
-        base = os.path.join(ROOT, "config", name)
-        path = base if os.path.exists(base) and not examples else base.replace(".yaml", ".example.yaml")
+        mine = os.path.join(ROOT, "config", name)
+        path = mine if os.path.exists(mine) and not examples else example_path(name, lang)
         with open(path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     return read("config.yaml"), read("pages.yaml")
+
+
+def init_language_pack(lang: str, force: bool = False) -> list[str]:
+    """Install a language pack as your own config/config.yaml + config/pages.yaml. Refuses to overwrite unless force."""
+    import shutil
+    if lang not in LANGUAGES:
+        raise ValueError(f"unknown language '{lang}' (available: {', '.join(LANGUAGES)})")
+    done = []
+    for name in ("config.yaml", "pages.yaml"):
+        dst = os.path.join(ROOT, "config", name)
+        if os.path.exists(dst) and not force:
+            raise FileExistsError(f"{dst} already exists (use --force to replace it; a backup is kept as {name}.bak)")
+    for name in ("config.yaml", "pages.yaml"):
+        dst = os.path.join(ROOT, "config", name)
+        if os.path.exists(dst):
+            shutil.copyfile(dst, dst + ".bak")
+        shutil.copyfile(example_path(name, lang), dst)
+        done.append(dst)
+    return done
 
 
 def config_signature() -> tuple:
@@ -70,7 +103,7 @@ class App:
         self.sensors = Sensors(cfg)
         self.display = Display(cfg.get("display", {}))
         self.renderer = Renderer(cfg.get("theme"), cfg.get("layout"))
-        self.commands: "queue.Queue[str]" = queue.Queue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<n>
+        self.commands: "queue.Queue[str]" = queue.Queue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<0-100>
         ids = [p["id"] for p in self.pages]
         self.home = ids.index(cfg.get("home_page", ids[0])) if cfg.get("home_page", ids[0]) in ids else 0
         self.index = self.home                 # page currently shown
@@ -178,7 +211,7 @@ class App:
             self.renderer.set_logos(cur[0], cur[1])
             self._save_state()
         elif cmd.startswith("brightness:"):
-            self.display.set_brightness(int(cmd[11:]))
+            self.display.set_brightness(float(cmd[11:]))
 
     def _poll_control_file(self):
         """Commands from `python -m displaymonitor --send <cmd>` (clean restarts, page selection from scripts)."""

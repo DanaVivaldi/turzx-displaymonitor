@@ -57,7 +57,7 @@ def start_tray(app):
         pystray.MenuItem(tr["reset"], send("logo:reset")),
         pystray.MenuItem(tr["reload"], send("reload")),
         pystray.MenuItem(tr["brightness"], pystray.Menu(
-            *[pystray.MenuItem(f"{v}", send(f"brightness:{v}")) for v in (60, 100, 150, 200, 255)])),
+            *[pystray.MenuItem(f"{v}%", send(f"brightness:{v}")) for v in (20, 40, 60, 80, 100)])),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(tr["quit"], lambda icon, item: (app.commands.put("quit"), icon.stop())),
     )

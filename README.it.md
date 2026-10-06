@@ -12,7 +12,7 @@ per **Windows 10/11**. Sostituisce `UsbMonitor.exe` del produttore con un piccol
 > Progetto non affiliato a TURZX, Turing, ASUS, Intel o LibreHardwareMonitor. Uso a proprio rischio.
 > Provato su **un solo** esemplare: USB `1A86:5722`, seriale `USB35INCHIPSV2` (firmware V2, protocollo «Rev A»), Windows 11, Python 3.12.
 
-![Tutte le pagine](docs/img/all_pages.png)
+![Tutte le pagine](docs/img/all_pages_it.png)
 
 *(gli screenshot usano dati inventati: `python tools/make_screenshots.py`. Ognuno mostra una coppia diversa di loghi — Intel / AMD Ryzen a sinistra, ASUS ROG / MSI / AORUS / NZXT a destra — solo per far vedere che i due loghi in basso si possono cambiare; i file dei loghi non fanno parte del repository.)*
 
@@ -35,13 +35,17 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1      # venv + dipende
 .\scripts\install_autostart.ps1                                 # avvio automatico all'accesso (task pianificato)
 ```
 
+`setup.ps1` chiede quale **pacchetto lingua** installare, **English** o **Italiano** (`-Language it` salta la domanda). Un pacchetto è una coppia
+`config.yaml` + `pages.yaml` (titoli delle pagine, etichette, menu della tray, testi del meteo). Per cambiare dopo:
+`python -m displaymonitor --init en --force` (i file precedenti restano come `*.bak`).
+
 Se lo schermo è montato al contrario: `display.rotate: 3` in `config/config.yaml`.
 
 ## Uso
 
 * **Icona nella tray**: *Mostra pagina* (resta finché non torni al riepilogo), *Torna al riepilogo*, *Logo a sinistra / a destra*, *Rotazione automatica*, *Luminosità*, *Esci*.
 * **Riga di comando** (parla con l'istanza in esecuzione): `python -m displaymonitor --send quit` (chiusura pulita: usala sempre al posto di terminare il processo),
-  `--send page:gpu`, `home`, `next`, `prev`, `rotate`, `brightness:150`.
+  `--send page:gpu`, `home`, `next`, `prev`, `rotate`, `brightness:60` (percentuale, 100 = massima).
 * `--preview` (anteprima PNG con i sensori reali), `--dump-sensors`, `--demo` (dati inventati), `--debug`.
 * Log: `logs/displaymonitor.log`.
 

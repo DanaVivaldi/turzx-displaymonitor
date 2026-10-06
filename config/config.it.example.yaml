@@ -1,0 +1,70 @@
+# PACCHETTO ITALIANO - impostazioni generali di DisplayMonitor.
+# Copia questo file in config/config.yaml (oppure: python -m displaymonitor --init it); config/config.yaml e' tuo e non finisce su Git.
+# Se config/config.yaml non esiste si usa l'esempio inglese (config.example.yaml).
+
+language: it           # lingua dei menu della tray (it | en)
+date_language: it      # giorno e mese nella data: "sab 03 dic" (it) oppure "Sat 03 Dec" (en)
+
+layout:
+  header: false        # false = compatto: niente barra in alto, anello piu' grande, schede piu' alte, orologio grande in alto a sinistra,
+                       #         loghi agli angoli bassi dell'anello. true = barra in alto con titolo pagina, data/ora e loghi.
+  logo_h: 22           # altezza dei loghi in px
+  # clock: true        # layout compatto: ora grande + data in alto a sinistra
+  # ring_scale: 1.15   # layout compatto: dimensione dell'anello
+
+display:
+  rotate: 1            # rotazione SOFTWARE del frame (np.rot90): 1 oppure 3 a seconda di come e' montato lo schermo.
+                       # Il pannello resta sempre in portrait: la rotazione hardware del firmware e' inaffidabile.
+  brightness: 100      # retroilluminazione in %, 0-100 (100 = massima); applicata ad ogni avvio
+  max_block_px: 12800  # ogni comando bitmap resta sotto questo numero di pixel (limite DMA del firmware)
+  flood_bytes: 2200000 # dopo una chiusura brusca/errore link: flusso di zeri che completa il bitmap rimasto a meta' (~13 s)
+  reset_on_connect: false  # il comando RESET non ha effetto visibile su questo schermo
+  refresh_band: 8      # righe ritrasmesse a ogni frame a rotazione: guarisce i pixel corrotti (0 = disattivato)
+  tile: 2              # granularita' (px) del rilevamento differenze
+  merge_gap: 4         # unisce rettangoli separati da meno di N px
+
+refresh_s: 1.0         # ogni quanto si ridisegna e si inviano le differenze
+hot_reload: true       # rilegge config.yaml / pages.yaml / temi quando cambiano e li applica senza riavvio
+home_page: overview    # pagina di riepilogo, sempre visibile
+stay_on_selected: true # una pagina scelta dalla tray resta fissa finche' non si sceglie "Torna al riepilogo".
+                       # Ad ogni avvio si riparte sempre dal riepilogo (la scelta non viene salvata).
+peek_s: 30             # usato solo se stay_on_selected e' false: secondi prima di tornare al riepilogo
+rotate_s: 0            # 0 = nessuna rotazione automatica; N = secondi per pagina (attivabile anche dalla tray)
+
+theme:
+  # preset: nebula       # un look salvato in themes/NOME.yaml (inclusi) o config/themes/NOME.yaml (tuoi): default | nebula | grid | ember | sunset | aurora
+  # logos: [intel, asus] # nomi dalla libreria di loghi (assets/logos/ + logos/) o percorsi; cambiabili anche dalla tray
+  # background: assets/backgrounds/miaimmagine.jpg   # sfondo opzionale; vedi docs/THEMING.md
+  # Qualsiasi colore si puo' ridefinire qui, es.:  cyan: "#ff66cc"
+  # Soglie dei colori, uguali per temperature (°C) e utilizzo (%):
+  #   [bianco_sotto, verde_fino_a, rosso_a]  ->  testo bianco sotto la 1a soglia, verde fino alla 2a,
+  #   poi giallo -> arancione -> rosso che raggiunge il rosso pieno alla 3a. Le barre usano lo stesso schema.
+  scale: [50, 60, 100]
+
+network:
+  interface: auto      # oppure il nome esatto, es. "Ethernet"
+  ping_host: 1.1.1.1
+
+sensors:
+  fast_s: 1.0
+  storage_s: 10
+  procs_s: 3
+  ping_s: 5
+  ram_temp: false      # temperatura dei moduli RAM dai sensori SPD dei DIMM (serve PawnIO; puo' dare conflitti con iCUE / Armoury)
+  mb_ignore_temps: []  # sonde della scheda madre scollegate/inaffidabili, es. [5] nasconde "Temperature #5"
+
+# Meteo opzionale (Open-Meteo: gratuito, senza account ne' chiave). L'unica richiesta e' un GET ad api.open-meteo.com con le tue coordinate.
+# weather:
+#   enabled: true
+#   latitude: 43.7
+#   longitude: 13.2
+#   city: "La mia citta'"  # solo un'etichetta: {weather_city}
+#   refresh_min: 30
+
+# Allarmi: se la condizione e' vera la pagina indicata passa in primo piano per hold_s secondi.
+# Le condizioni usano le chiavi dei sensori (vedi `python -m displaymonitor --dump-sensors`).
+alerts:
+  - {page: cpu, when: "cpu_temp is not None and cpu_temp >= 85", hold_s: 30}
+  - {page: gpu, when: "gpu_temp is not None and gpu_temp >= 80", hold_s: 30}
+  - {page: memory, when: "mem_pct is not None and mem_pct >= 92", hold_s: 30}
+  - {page: disks, when: "disk_temp_max is not None and disk_temp_max >= 65", hold_s: 30}

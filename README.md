@@ -63,6 +63,10 @@ cd turzx-displaymonitor
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1     # venv + dependencies + LibreHardwareMonitor (hash-checked) + PawnIO (asks)
 ```
 
+`setup.ps1` asks which **language pack** to install — **English** or **Italiano** (`-Language en|it` skips the question). A pack is a
+matching `config.yaml` + `pages.yaml` (page titles, labels, tray menu, weather page text). Switch later with
+`python -m displaymonitor --init it --force` (your old files are kept as `*.bak`).
+
 Run it once by hand (elevated PowerShell) to see that everything works:
 
 ```powershell
@@ -84,7 +88,7 @@ If the display is mounted the other way up, set `display.rotate: 3` in `config/c
 
   ```powershell
   .\.venv\Scripts\python.exe -m displaymonitor --send quit          # clean exit (always prefer this to killing the process)
-  .\.venv\Scripts\python.exe -m displaymonitor --send page:gpu      # show a page;  home | next | prev | rotate | brightness:150
+  .\.venv\Scripts\python.exe -m displaymonitor --send page:gpu      # show a page;  home | next | prev | rotate | brightness:60
   ```
 * `python -m displaymonitor --preview` renders every page with your real sensors to `docs/preview/*.png` (no display needed),
   `--dump-sensors` prints every sensor key, `--demo` renders invented data, `--debug` logs per‑frame statistics.
@@ -93,7 +97,7 @@ If the display is mounted the other way up, set `display.rotate: 3` in `config/c
 ## Configuration
 
 Copy/edit `config/config.yaml` (general settings, thresholds, alerts) and `config/pages.yaml` (pages). Both are created from the
-`*.example.yaml` files by `setup.ps1`, are git‑ignored and fully documented in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+language-pack examples (`*.example.yaml` English, `*.it.example.yaml` Italiano) by `setup.ps1`, are git‑ignored and fully documented in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 
 ## Troubleshooting
 

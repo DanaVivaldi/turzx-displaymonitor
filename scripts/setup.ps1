@@ -3,11 +3,12 @@
     1. creates the Python virtual environment (.venv) and installs requirements.txt
     2. downloads LibreHardwareMonitor into tools\lhm  (pinned release, SHA-256 verified)
     3. offers to install the PawnIO driver (needed for CPU / motherboard sensors)
-    4. copies the example configuration to config\config.yaml / config\pages.yaml if you have none
+    4. installs a language pack (English or Italiano) as config\config.yaml / config\pages.yaml if you have none
 
   Usage:   powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
   Needs:   Python 3.12 on PATH (py -3.12 or python), internet access.
 #>
+param([ValidateSet("en", "it")][string]$Language)      # language pack: en (English) or it (Italiano); asked if omitted
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -51,11 +52,14 @@ if (-not (Get-Service PawnIO -ErrorAction SilentlyContinue)) {
     if ($ans -match "^[yY]") { winget install --id namazso.PawnIO -e --accept-package-agreements --accept-source-agreements }
 } else { Write-Host "PawnIO already installed." }
 
-# ---- 4. configuration ------------------------------------------------------------------------
-foreach ($f in @("config", "pages")) {
-    $dst = "config\$f.yaml"
-    if (-not (Test-Path $dst)) { Copy-Item "config\$f.example.yaml" $dst; Write-Host "Created $dst (edit it to taste)" }
-}
+# ---- 4. configuration: language pack ---------------------------------------------------------
+if (-not (Test-Path "config\config.yaml") -and -not (Test-Path "config\pages.yaml")) {
+    if (-not $Language) {
+        $ans = Read-Host "Language pack - en (English) or it (Italiano) [en]"
+        $Language = if ($ans -match "^[iI]") { "it" } else { "en" }
+    }
+    & .\.venv\Scripts\python.exe -m displaymonitor --init $Language
+} else { Write-Host "config\config.yaml / pages.yaml already exist: left untouched (change language with:  python -m displaymonitor --init it --force)" }
 
 Write-Host ""
 Write-Host "Done. Try it (elevated PowerShell):  .\.venv\Scripts\python.exe -m displaymonitor"

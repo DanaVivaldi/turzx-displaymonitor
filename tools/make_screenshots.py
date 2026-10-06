@@ -68,6 +68,16 @@ def main():
     montage(shots).save(os.path.join(out, "all_pages.png"))
     print("all_pages.png")
 
+    # the Italian language pack (used by README.it.md)
+    cfg_it, pages_it = load_config(examples=True, lang="it")
+    snap_it = demo_snapshot("it")
+    shots_it = []
+    for i, p in enumerate(pages_it["pages"]):
+        left, right = PAGE_LOGOS.get(p["id"], (None, None))
+        shots_it.append(Renderer({"logos": [left, right]}, {"header": False}).render(p, snap_it, i, len(pages_it["pages"])))
+    montage(shots_it).save(os.path.join(out, "all_pages_it.png"))
+    print("all_pages_it.png")
+
     names = sorted(os.path.splitext(os.path.basename(f))[0] for f in glob.glob(os.path.join(ROOT, "themes", "*.yaml")))
     ths = []
     for n in names:

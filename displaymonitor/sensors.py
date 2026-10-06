@@ -44,11 +44,12 @@ def rate_str(bps):
     return f"{bps:.0f}", "B/s"
 
 
-def uptime_str(sec):
+def uptime_str(sec, lang="en"):
     d, rem = divmod(int(sec), 86400)
     h, rem = divmod(rem, 3600)
     m = rem // 60
-    return f"{d}g {h:02d}h" if d else f"{h}h {m:02d}m"
+    day = "g" if lang == "it" else "d"                  # giorni / days
+    return f"{d}{day} {h:02d}h" if d else f"{h}h {m:02d}m"
 
 
 class Sensors:
@@ -107,8 +108,9 @@ class Sensors:
             clr.AddReference(LHM_DLL)
             from LibreHardwareMonitor import Hardware
             c = Hardware.Computer()
-            # Memory stays off: LHM would poll the DIMMs' SPD hubs, and one failing Update() crashes pythonnet.
+            # Memory (the DIMMs' SPD temperature sensors) is opt-in: reading SPD hubs can clash with other tools (iCUE, Armoury ...).
             c.IsCpuEnabled = c.IsGpuEnabled = True
+            c.IsMemoryEnabled = bool(self.cfg.get("sensors", {}).get("ram_temp", False))
             c.IsMotherboardEnabled = c.IsStorageEnabled = True
             c.Open()
             self._computer = c
@@ -329,6 +331,8 @@ class Sensors:
             vals = [d["temp"] for d in disks if d["kind"] == kind and d.get("temp") is not None]
             out[f"disk_max_{kind.lower()}"] = max(vals) if vals else None
         self._set(out)
+        if self.cfg.get("sensors", {}).get("ram_temp", False):
+            self._poll_ram_temps()
 
     @staticmethod
     def _short(name):
@@ -344,6 +348,22 @@ class Sensors:
                 return "NVMe"
             return "HDD" if str(pd.get("MediaType")).lower() in ("hdd", "3") else "SSD"
         return "HDD" if name.startswith(("ST", "WD", "HGST")) else "SSD"
+
+    def _poll_ram_temps(self):
+        """DIMM temperatures from the modules' SPD hubs (DDR5, and DDR4 with a thermal sensor). Needs sensors.ram_temp: true and PawnIO."""
+        temps = []
+        for hw in self._hw:
+            name = str(hw.Name)
+            if str(hw.HardwareType) != "Memory" or name in ("Total Memory", "Virtual Memory"):
+                continue                                     # these two are served by psutil
+            try:
+                hw.Update()
+                temps += [float(s.Value) for s in hw.Sensors
+                          if str(s.SensorType) == "Temperature" and str(s.Name).startswith("DIMM") and s.Value is not None]
+            except Exception:  # noqa: BLE001
+                continue
+        if temps:
+            self._set({"ram_temp": max(temps), "ram_temp_avg": sum(temps) / len(temps), "ram_temps_str": " ".join(f"{t:.0f}" for t in temps)})
 
     # -- psutil groups --------------------------------------------------------------------------
     def _pick_nic(self):
@@ -407,7 +427,7 @@ class Sensors:
                    mem_pct=100 * (vm.total - vm.available) / vm.total,
                    vmem_total=sw.total / gib, vmem_used=sw.used / gib, vmem_pct=sw.percent)
         out["sys_uptime"] = now - psutil.boot_time()
-        out["uptime_str"] = uptime_str(out["sys_uptime"])
+        out["uptime_str"] = uptime_str(out["sys_uptime"], self.lang)
         return out
 
     def _poll_procs(self):

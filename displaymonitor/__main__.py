@@ -43,10 +43,23 @@ def main():
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--no-tray", action="store_true")
     ap.add_argument("--rotate", type=float, help="override rotate_s (seconds per page)")
+    ap.add_argument("--init", metavar="LANG", choices=["en", "it"], help="install a language pack (en | it) as your config/config.yaml + pages.yaml")
+    ap.add_argument("--force", action="store_true", help="with --init: replace existing config files (a .bak copy is kept)")
+    ap.add_argument("--lang", choices=["en", "it"], help="language pack for --demo (default: the example in English)")
     ap.add_argument("--theme", metavar="NAME", help="use this theme preset (themes/NAME.yaml or config/themes/NAME.yaml)")
     ap.add_argument("--compact", action="store_true", help="force the compact layout (no top bar), handy with --demo/--preview")
     ap.add_argument("--send", metavar="CMD", help="send a command to the running instance: quit, home, pin, rotate, next, prev, page:<id>, brightness:<n>")
     a = ap.parse_args()
+    if a.init:
+        from .app import init_language_pack
+        try:
+            for f in init_language_pack(a.init, a.force):
+                print("written", f)
+        except (FileExistsError, ValueError) as e:
+            print("error:", e)
+            return 1
+        print(f"language pack '{a.init}' installed: edit config/config.yaml and config/pages.yaml; restart the program to apply.")
+        return
     if a.send:
         os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
         with open(os.path.join(ROOT, "logs", "control.cmd"), "a", encoding="utf-8") as f:
@@ -54,7 +67,7 @@ def main():
         print("sent:", a.send)
         return
     setup_logging(a.debug, console=a.preview or a.dump_sensors or a.debug)
-    cfg, pages = load_config(examples=a.demo)
+    cfg, pages = load_config(examples=a.demo, lang=a.lang)
     if a.rotate is not None:
         cfg["rotate_s"] = a.rotate
     if a.theme:
@@ -66,7 +79,7 @@ def main():
         from .demo import demo_snapshot
         app = App(cfg, pages)
         snap = demo_snapshot(cfg.get("language", "en"))
-        out = os.path.join(ROOT, "docs", "img")
+        out = os.path.join(ROOT, "docs", "img" if not a.lang else os.path.join("img", a.lang))
         os.makedirs(out, exist_ok=True)
         for i, p in enumerate(app.pages):
             app.renderer.render(p, snap, i, len(app.pages)).save(os.path.join(out, f"{i + 1:02d}_{p['id']}.png"))
@@ -123,4 +136,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

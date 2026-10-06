@@ -37,7 +37,7 @@ def rgb565(img) -> np.ndarray:
 class Display:
     def __init__(self, cfg: dict):
         self.rot_k = int(cfg.get("rotate", 1))           # np.rot90 steps: 1 or 3 depending on how the panel is mounted
-        self.brightness = int(cfg.get("brightness", 200))
+        self.brightness = self._clamp_pct(cfg.get("brightness", 100))      # percent, 100 = brightest
         self.tile = int(cfg.get("tile", 2))
         self.gap_tiles = int(cfg.get("merge_gap", 4)) // self.tile
         self.band = int(cfg.get("refresh_band", 8))      # rows resent every frame to heal corrupted pixels (0 = off)
@@ -58,8 +58,8 @@ class Display:
         self.gap_tiles = int(cfg.get("merge_gap", 4)) // self.tile
         self.band = int(cfg.get("refresh_band", self.band))
         self.max_px = int(cfg.get("max_block_px", self.max_px))
-        if "brightness" in cfg and int(cfg["brightness"]) != self.brightness:
-            self.set_brightness(int(cfg["brightness"]))
+        if "brightness" in cfg and self._clamp_pct(cfg["brightness"]) != self.brightness:
+            self.set_brightness(cfg["brightness"])
         self.invalidate()                       # rotation / tile changes: redraw everything
 
     # -- connection -----------------------------------------------------------------------------
@@ -102,7 +102,7 @@ class Display:
             pkt[7], pkt[8], pkt[9], pkt[10] = HW_W >> 8, HW_W & 255, HW_H >> 8, HW_H & 255
             self._write(bytes(pkt))
             time.sleep(0.05)
-            self._write(_header(CMD_BRIGHTNESS, self.brightness, 0, 0, 0))
+            self._write(_header(CMD_BRIGHTNESS, self.raw_brightness(), 0, 0, 0))
             time.sleep(0.05)
         except (serial.SerialException, OSError) as e:
             log.warning("cannot initialise display on %s: %s", port, e)
@@ -166,11 +166,20 @@ class Display:
         self._ser.flush()
 
     # -- drawing --------------------------------------------------------------------------------
-    def set_brightness(self, value: int):
-        self.brightness = max(0, min(255, int(value)))
+    @staticmethod
+    def _clamp_pct(value) -> int:
+        return max(0, min(100, int(round(float(value)))))
+
+    def raw_brightness(self) -> int:
+        """Percent -> the firmware's value. Verified on the tested unit: the scale is INVERTED (0 = brightest, 255 = darkest)."""
+        return int(round(255 - self.brightness * 2.55))
+
+    def set_brightness(self, percent):
+        """0-100 %, 100 = brightest."""
+        self.brightness = self._clamp_pct(percent)
         if self.connected:
             try:
-                self._write(_header(CMD_BRIGHTNESS, self.brightness, 0, 0, 0))
+                self._write(_header(CMD_BRIGHTNESS, self.raw_brightness(), 0, 0, 0))
             except (serial.SerialException, OSError):
                 self.disconnect()
 

@@ -28,7 +28,7 @@ byte5 = command
 | Command | Value | Notes |
 |---|---|---|
 | `SCREEN_ON` | 109 | coordinates unused |
-| `SET_BRIGHTNESS` | 110 | the level goes in `x`. Raw 0‑255. *(upstream says 0 = brightest.)* The value 200 looked clearly visible on the tested unit |
+| `SET_BRIGHTNESS` | 110 | the level goes in `x`. Raw 0‑255, **inverted**: 0 = brightest, 255 = darkest (confirmed by eye on the tested unit: 60 was brighter than 255; it matches the upstream documentation). DisplayMonitor exposes it as a 0–100 % scale |
 | `SET_ORIENTATION` | 121 | a **16‑byte** packet: the 6‑byte header, then `orientation+100`, `width_hi, width_lo, height_hi, height_lo`, zero padding. **Must be one single write**, otherwise the parser desynchronises and the screen stays black |
 | `DISPLAY_BITMAP` | 197 | header with `x, y, ex, ey`, followed by `(ex‑x+1)·(ey‑y+1)` pixels |
 | `HELLO` | 69 | six bytes of 69. The tested (original Turing) firmware does **not** answer; UsbMonitor firmwares do |
