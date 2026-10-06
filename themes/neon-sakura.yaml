@@ -1,0 +1,14 @@
+# Neon in pink / magenta / violet; translucent cards.
+background: themes/img/neon-sakura.jpg
+background_dim: 0.12
+panel_opacity: 0.78
+ring_backdrop: true
+bg: "#0e0420"
+panel: "#240a4a"
+edge: "#a040d0"
+track: "#3a1470"
+cyan: "#ff7ac8"
+cyan_dark: "#9a3a8a"
+dim: "#d0a0ee"
+glow_color: "#40104a"
+disc: ["#3a0a50", "#7a1a8a", "#c02aa0"]

@@ -9,9 +9,12 @@ import argparse
 import logging
 import logging.handlers
 import os
+import signal
 import sys
+import threading
 import time
 
+from . import __version__
 from .app import ROOT, App, load_config
 
 
@@ -26,7 +29,16 @@ def setup_logging(debug: bool, console: bool):
 
 
 def single_instance():
-    """Return a mutex handle, or None if another instance is already running."""
+    """Return a lock handle, or None if another instance is already running (Windows: a named mutex, elsewhere: a lock file)."""
+    if os.name != "nt":
+        import fcntl
+        os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
+        f = open(os.path.join(ROOT, "logs", "instance.lock"), "w")
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return None
+        return f                       # keep the handle alive for the whole run
     try:
         import win32api, win32event, winerror
         h = win32event.CreateMutex(None, False, "Global\\DisplayMonitorTURZX")
@@ -46,10 +58,30 @@ def main():
     ap.add_argument("--init", metavar="LANG", choices=["en", "it"], help="install a language pack (en | it) as your config/config.yaml + pages.yaml")
     ap.add_argument("--force", action="store_true", help="with --init: replace existing config files (a .bak copy is kept)")
     ap.add_argument("--lang", choices=["en", "it"], help="language pack for --demo (default: the example in English)")
+    ap.add_argument("--version", action="store_true", help="print the version")
+    ap.add_argument("--check-update", action="store_true", help="look for a newer version on GitHub and say so")
+    ap.add_argument("--update", action="store_true", help="download and install the newest version (asks first; config/ and assets/ are never touched)")
+    ap.add_argument("--yes", action="store_true", help="with --update: do not ask")
     ap.add_argument("--theme", metavar="NAME", help="use this theme preset (themes/NAME.yaml or config/themes/NAME.yaml)")
     ap.add_argument("--compact", action="store_true", help="force the compact layout (no top bar), handy with --demo/--preview")
     ap.add_argument("--send", metavar="CMD", help="send a command to the running instance: quit, home, pin, rotate, next, prev, page:<id>, brightness:<n>")
     a = ap.parse_args()
+    if a.version:
+        print(__version__)
+        return
+    if a.check_update or a.update:
+        from . import updates
+        cfg = load_config()[0].get("updates") or {}
+        repo = cfg.get("repo", updates.DEFAULT_REPO)
+        if a.update:
+            return updates.run_update(repo, assume_yes=a.yes)
+        info = updates.fetch_latest(repo)
+        if not info:
+            print("could not reach GitHub")
+            return 1
+        print(f"installed {__version__}, latest {info['version']} ({info['source']}): "
+              + ("update available - run: python -m displaymonitor --update" if updates.is_newer(info["version"]) else "up to date"))
+        return
     if a.init:
         from .app import init_language_pack
         try:
@@ -113,14 +145,32 @@ def main():
     faulthandler.enable(file=fault, all_threads=True)
     sys.excepthook = lambda t, v, tb: log.critical("unhandled exception", exc_info=(t, v, tb))
     app = App(cfg, pages)
+
+    def on_signal(signum, frame):                 # SIGTERM / Ctrl-C / log-off: show the "Ciao" screen, then exit cleanly
+        app.commands.put("away:shutdown")
+    for name in ("SIGTERM", "SIGINT", "SIGHUP", "SIGBREAK"):
+        if hasattr(signal, name):
+            try:
+                signal.signal(getattr(signal, name), on_signal)
+            except (ValueError, OSError):
+                pass
     icon = None
-    if not a.no_tray:
-        from .tray import start_tray
-        icon = start_tray(app)
-    log.info("DisplayMonitor started (admin=%s, pid=%s)", app.sensors.admin, os.getpid())
     code = 0
+    log.info("DisplayMonitor %s started (admin=%s, pid=%s)", __version__, app.sensors.admin, os.getpid())
     try:
-        app.run()
+        if not a.no_tray and sys.platform == "darwin":     # macOS: the tray icon must own the main thread, the app runs beside it
+            from .tray import build_tray
+            icon = build_tray(app)
+            worker = threading.Thread(target=lambda: (app.run(), icon.stop()), name="app")
+            worker.start()
+            icon.run()
+            app.commands.put("quit")
+            worker.join(15)
+        else:
+            if not a.no_tray:
+                from .tray import start_tray
+                icon = start_tray(app)
+            app.run()
         log.info("DisplayMonitor stopped (orderly)")
     except BaseException:
         log.exception("DisplayMonitor crashed")

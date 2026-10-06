@@ -1,0 +1,14 @@
+# Neon in ember red / orange / magenta; translucent cards.
+background: themes/img/neon-ember.jpg
+background_dim: 0.12
+panel_opacity: 0.78
+ring_backdrop: true
+bg: "#12060a"
+panel: "#2a0c14"
+edge: "#c2402a"
+track: "#40141c"
+cyan: "#ff9a2e"
+cyan_dark: "#8a3a14"
+dim: "#e0a090"
+glow_color: "#40100a"
+disc: ["#3a0a14", "#7a1224", "#c0301c"]

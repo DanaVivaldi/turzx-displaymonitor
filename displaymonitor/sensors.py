@@ -8,8 +8,11 @@ import datetime
 import json
 import logging
 import os
+import re
+import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -80,13 +83,20 @@ class Sensors:
         self._hist = {"net_down": deque(maxlen=60), "net_up": deque(maxlen=60)}
         self.weather = Weather(cfg.get("weather"), self.lang)
         self.admin = bool(ctypes.windll.shell32.IsUserAnAdmin()) if os.name == "nt" else False
+        self._posix = None                 # Linux / macOS backend (sensors_posix.PosixProbe)
 
     # -- lifecycle ------------------------------------------------------------------------------
     def start(self):
-        if not self.admin:
-            log.warning("not running as administrator: CPU / motherboard sensors will be missing")
-        self._open_lhm()
-        self._load_physical_disks()
+        if os.name == "nt":
+            if not self.admin:
+                log.warning("not running as administrator: CPU / motherboard sensors will be missing")
+            self._open_lhm()
+            self._load_physical_disks()
+        else:
+            from .sensors_posix import PosixProbe
+            self._posix = PosixProbe(self.cfg)
+            self._set(self._posix.static())
+            log.info("Linux / macOS sensors: psutil + hwmon + nvidia-smi")
         psutil.cpu_percent(None)
         for p in psutil.process_iter(["cpu_percent"]):  # prime per-process CPU counters
             pass
@@ -180,6 +190,11 @@ class Sensors:
     # -- LibreHardwareMonitor groups ------------------------------------------------------------
     def _poll_fast(self):
         out = {}
+        if self._posix is not None:
+            out.update(self._posix.fast())
+            out.update(self._poll_system())
+            self._set(out)
+            return
         for hw in self._hw:
             kind = str(hw.HardwareType)
             if kind not in FAST_KINDS:
@@ -305,7 +320,9 @@ class Sensors:
 
     def _poll_storage(self):
         disks, used_pd = [], set()
-        for hw in self._hw:
+        if self._posix is not None:
+            disks = self._posix.disks()
+        for hw in ([] if self._posix is not None else self._hw):
             if str(hw.HardwareType) != "Storage":
                 continue
             try:
@@ -337,7 +354,7 @@ class Sensors:
             vals = [d["temp"] for d in disks if d["kind"] == kind and d.get("temp") is not None]
             out[f"disk_max_{kind.lower()}"] = max(vals) if vals else None
         self._set(out)
-        if self.cfg.get("sensors", {}).get("ram_temp", False):
+        if self._posix is None and self.cfg.get("sensors", {}).get("ram_temp", False):
             self._poll_ram_temps()
 
     @staticmethod
@@ -458,12 +475,20 @@ class Sensors:
         })
 
     def _poll_ping(self):
+        ms = None
         try:
             import ping3
             ms = ping3.ping(self.ping_host, timeout=1, unit="ms")
-            self._set({"ping_ms": float(ms) if ms else None})
         except Exception:  # noqa: BLE001
-            self._set({"ping_ms": None})
+            pass
+        if not ms and os.name != "nt" and shutil.which("ping"):     # unprivileged ICMP sockets are often disabled: use the system ping
+            flag = ["-c", "1", "-W", "1"] if sys.platform != "darwin" else ["-c", "1", "-t", "1"]
+            try:
+                m = re.search(r"time[=<]([\d.]+)", subprocess.run(["ping", *flag, self.ping_host], capture_output=True, text=True, timeout=4).stdout)
+                ms = float(m.group(1)) if m else None
+            except Exception:  # noqa: BLE001
+                ms = None
+        self._set({"ping_ms": float(ms) if ms else None})
 
     # -- public ---------------------------------------------------------------------------------
     def snapshot(self) -> dict:

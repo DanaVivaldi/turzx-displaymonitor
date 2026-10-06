@@ -1,7 +1,7 @@
 """System-tray icon: pick a page (it stays until you go back to the recap), auto-rotation, brightness, quit."""
 import logging
-
 import os
+import webbrowser
 
 import pystray
 from PIL import Image, ImageDraw
@@ -12,9 +12,11 @@ log = logging.getLogger(__name__)
 
 TEXT = {
     "en": {"home": "Back to recap", "pages": "Show page", "rotate": "Automatic rotation", "brightness": "Brightness",
-           "logo_left": "Left logo", "logo_right": "Right logo", "none": "None", "reset": "Logos from config", "reload": "Reload configuration", "quit": "Quit"},
+           "logo_left": "Left logo", "logo_right": "Right logo", "none": "None", "reset": "Logos from config", "reload": "Reload configuration", "quit": "Quit",
+           "web": "Web preview", "web_open": "Open the preview in the browser", "update": "Update available: v{v} (open)", "check": "Check for updates"},
     "it": {"home": "Torna al riepilogo", "pages": "Mostra pagina", "rotate": "Rotazione automatica", "brightness": "Luminosità",
-           "logo_left": "Logo a sinistra", "logo_right": "Logo a destra", "none": "Nessuno", "reset": "Loghi da configurazione", "reload": "Ricarica configurazione", "quit": "Esci"},
+           "logo_left": "Logo a sinistra", "logo_right": "Logo a destra", "none": "Nessuno", "reset": "Loghi da configurazione", "reload": "Ricarica configurazione", "quit": "Esci",
+           "web": "Anteprima web", "web_open": "Apri l'anteprima nel browser", "update": "Aggiornamento disponibile: v{v} (apri)", "check": "Controlla aggiornamenti"},
 }
 
 
@@ -27,7 +29,7 @@ def _icon_image():
     return img
 
 
-def start_tray(app):
+def build_tray(app):
     tr = TEXT.get(app.cfg.get("language", "en"), TEXT["en"])
 
     def send(cmd):
@@ -56,12 +58,24 @@ def start_tray(app):
         pystray.MenuItem(tr["logo_right"], logo_menu("right")),
         pystray.MenuItem(tr["reset"], send("logo:reset")),
         pystray.MenuItem(tr["reload"], send("reload")),
+        pystray.MenuItem(tr["web"], send("web:toggle"), checked=lambda item: app.web.running),
+        pystray.MenuItem(tr["web_open"], lambda icon, item: webbrowser.open(app.web.url), visible=lambda item: app.web.running),
+        pystray.MenuItem(lambda item: tr["update"].format(v=app.updates.available),
+                         lambda icon, item: webbrowser.open((app.updates.latest or {}).get("url", "https://github.com")),
+                         visible=lambda item: bool(app.updates.available)),
+        pystray.MenuItem(tr["check"], send("update:check")),
         pystray.MenuItem(tr["brightness"], pystray.Menu(
             *[pystray.MenuItem(f"{v}%", send(f"brightness:{v}")) for v in (20, 40, 60, 80, 100)])),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(tr["quit"], lambda icon, item: (app.commands.put("quit"), icon.stop())),
     )
     icon = pystray.Icon("DisplayMonitor", _icon_image(), "DisplayMonitor", menu)
+    return icon
+
+
+def start_tray(app):
+    """Windows / Linux: the icon runs in its own thread. (macOS needs the main thread: see __main__, which uses build_tray + icon.run().)"""
+    icon = build_tray(app)
     icon.run_detached()
     log.info("tray icon started")
     return icon

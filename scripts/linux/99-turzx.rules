@@ -1,0 +1,2 @@
+# TURZX / Turing 3.5" USB display (CH340-class serial, VID 1a86 PID 5722): let the logged-in user open it without root.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="5722", MODE="0660", GROUP="dialout", TAG+="uaccess"

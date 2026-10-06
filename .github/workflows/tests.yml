@@ -6,12 +6,26 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       # the tests need no hardware, no LibreHardwareMonitor and no pythonnet: only the rendering / driver stack
+      # (on Linux / macOS the sensor backend is psutil + hwmon, which the tests also exercise)
       - run: python -m pip install pyserial Pillow numpy PyYAML psutil pytest
       - run: python -m pytest
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shell scripts parse
+        run: for f in scripts/*.sh; do bash -n "$f"; done
+      - name: shellcheck
+        run: shellcheck -S warning scripts/*.sh

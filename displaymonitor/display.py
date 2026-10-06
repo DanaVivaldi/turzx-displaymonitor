@@ -58,8 +58,6 @@ class Display:
         self.gap_tiles = int(cfg.get("merge_gap", 4)) // self.tile
         self.band = int(cfg.get("refresh_band", self.band))
         self.max_px = int(cfg.get("max_block_px", self.max_px))
-        if "brightness" in cfg and self._clamp_pct(cfg["brightness"]) != self.brightness:
-            self.set_brightness(cfg["brightness"])
         self.invalidate()                       # rotation / tile changes: redraw everything
 
     # -- connection -----------------------------------------------------------------------------

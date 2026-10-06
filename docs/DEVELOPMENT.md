@@ -9,6 +9,12 @@ displaymonitor/
   sensors.py    LibreHardwareMonitor (pythonnet) + psutil + ping, polled at different rates, flat snapshot dict
   render.py     page renderer (Pillow, 3× supersampling): ring, cards, legend, colour scheme
   display.py    USB display driver: port discovery, init, diff → rectangles → blocks, flood recovery
+  sensors_posix.py  Linux / macOS backend (psutil + hwmon + nvidia-smi); pure parsers are unit-tested with fake data
+  alerts.py     the full-screen temperature alarm: thresholds, hysteresis, rotation, the detail rows per component
+  schedule.py   night window (wraps over midnight) and its brightness
+  session.py    lock / unlock / sleep / shutdown events (Windows window messages, Linux loginctl, macOS Quartz) -> the "Ciao" screen
+  web.py        local web preview (stdlib http.server): frame, state, whitelisted commands, Host / token checks
+  updates.py    GitHub update check (cached in logs/update.json) and `--update`
   tray.py       pystray menu
   demo.py       invented snapshot for screenshots
 themes/         shipped theme presets (*.yaml) and their generated pictures (img/)

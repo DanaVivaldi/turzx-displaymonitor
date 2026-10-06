@@ -3,14 +3,21 @@ import glob
 import logging
 import os
 import queue
+import threading
 import time
 from collections import defaultdict
 
 import yaml
+from PIL import Image
 
+from .alerts import TempAlarm
 from .display import Display, rgb565
 from .render import Renderer
+from .schedule import night_active, night_brightness
 from .sensors import Sensors
+from .session import SessionWatcher
+from .updates import UpdateChecker
+from .web import WebPreview
 
 log = logging.getLogger(__name__)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -96,6 +103,28 @@ def alert_active(expr: str, snap: dict) -> bool:
         return False
 
 
+AWAY_TEXT = {"en": {"lock": "screen locked", "sleep": "sleeping", "shutdown": "shutting down"},
+             "it": {"lock": "schermo bloccato", "sleep": "sospensione", "shutdown": "spegnimento"}}
+
+
+def page_alert_rules(cfg: dict) -> list:
+    """The older "show this page when <condition>" rules: `alerts:` as a list, or `alerts.pages`."""
+    a = cfg.get("alerts")
+    return list(a) if isinstance(a, list) else list((a or {}).get("pages") or [])
+
+
+class CommandQueue(queue.Queue):
+    """Commands for the main loop; putting one wakes it up at once (the lock / shutdown screen must not wait for the next refresh)."""
+
+    def __init__(self):
+        super().__init__()
+        self.wake = threading.Event()
+
+    def put(self, item, block=True, timeout=None):
+        super().put(item, block, timeout)
+        self.wake.set()
+
+
 class App:
     def __init__(self, cfg: dict, pages_cfg: dict):
         self.cfg = cfg
@@ -103,7 +132,18 @@ class App:
         self.sensors = Sensors(cfg)
         self.display = Display(cfg.get("display", {}))
         self.renderer = Renderer(cfg.get("theme"), cfg.get("layout"))
-        self.commands: "queue.Queue[str]" = queue.Queue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<0-100>
+        self.commands = CommandQueue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<0-100> | away:<event> | web:on|off|toggle
+        self.lang = cfg.get("language", "en")
+        self.alarm = TempAlarm(cfg.get("alerts"), self.lang)
+        self.base_brightness = self._cfg_brightness = self.display.brightness   # what the user asked for; the night schedule / alarm override it
+        self.away: str | None = None            # lock | sleep | shutdown while the "Ciao" screen is shown
+        self.bye_done = threading.Event()       # set once the shutdown frame has been sent
+        self.last_frame: Image.Image | None = None
+        self.frame_seq = 0
+        self.updates = UpdateChecker(cfg.get("updates"))
+        self.web = WebPreview(self)
+        self.web_wanted: bool | None = None     # the tray's choice (saved in state.yaml); None = follow config web.enabled
+        self.session = SessionWatcher(self._on_session)
         ids = [p["id"] for p in self.pages]
         self.home = ids.index(cfg.get("home_page", ids[0])) if cfg.get("home_page", ids[0]) in ids else 0
         self.index = self.home                 # page currently shown
@@ -148,24 +188,53 @@ class App:
         self._config_logos = tuple(renderer.t["logos"])
         self._load_state()
         self.display.configure(cfg.get("display", {}))
+        if "brightness" in cfg.get("display", {}) and Display._clamp_pct(cfg["display"]["brightness"]) != self._cfg_brightness:
+            self.base_brightness = self._cfg_brightness = Display._clamp_pct(cfg["display"]["brightness"])
+        self.lang = cfg.get("language", "en")
+        self.alarm.configure(cfg.get("alerts"), self.lang)
         self.sensors.set_language(cfg)
+        self._sync_web()
         log.info("configuration reloaded (%s): %d pages, theme preset %s", reason, len(pages), (cfg.get("theme") or {}).get("preset"))
 
     def _load_state(self):
         try:
             with open(self.state_file, encoding="utf-8") as f:
-                logos = (yaml.safe_load(f) or {}).get("logos")
+                state = yaml.safe_load(f) or {}
         except OSError:
             return
-        if logos:
-            self.renderer.set_logos(*(list(logos) + [None, None])[:2])
+        if state.get("logos"):
+            self.renderer.set_logos(*(list(state["logos"]) + [None, None])[:2])
+        if isinstance(state.get("web"), bool):
+            self.web_wanted = state["web"]
 
     def _save_state(self):
+        state = {}
+        if self.state_file_has_logos():
+            state["logos"] = [x if isinstance(x, (str, dict)) else None for x in self.renderer.t["logos"]]
+        if self.web_wanted is not None:
+            state["web"] = self.web_wanted
         try:
-            with open(self.state_file, "w", encoding="utf-8") as f:
-                yaml.safe_dump({"logos": [x if isinstance(x, (str, dict)) else None for x in self.renderer.t["logos"]]}, f)
+            if state:
+                with open(self.state_file, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(state, f)
+            elif os.path.exists(self.state_file):
+                os.remove(self.state_file)
         except OSError as e:
             log.warning("cannot save %s: %s", self.state_file, e)
+
+    def state_file_has_logos(self) -> bool:
+        """The tray's logo choice is only saved once it differs from config.yaml (so `logo:reset` leaves no stale choice)."""
+        return tuple(self.renderer.t["logos"]) != tuple(self._config_logos)
+
+    def web_enabled(self) -> bool:
+        return self.web_wanted if self.web_wanted is not None else bool((self.cfg.get("web") or {}).get("enabled", False))
+
+    def _sync_web(self):
+        want = self.web_enabled()
+        if want and not self.web.running:
+            self.web.start(self.cfg.get("web"))
+        elif not want and self.web.running:
+            self.web.stop()
 
     # -- control --------------------------------------------------------------------------------
     def _show_page(self, i: int):
@@ -201,10 +270,7 @@ class App:
             self.reload_config("requested")
         elif cmd == "logo:reset":
             self.renderer.set_logos(*(list(self._config_logos) + [None, None])[:2])
-            try:
-                os.remove(self.state_file)
-            except OSError:
-                pass
+            self._save_state()
         elif cmd.startswith("logo:"):
             _, side, name = cmd.split(":", 2)           # logo:left:amd | logo:right:none
             cur = list(self.renderer.t["logos"]) + [None, None]
@@ -212,7 +278,24 @@ class App:
             self.renderer.set_logos(cur[0], cur[1])
             self._save_state()
         elif cmd.startswith("brightness:"):
-            self.display.set_brightness(float(cmd[11:]))
+            self.base_brightness = Display._clamp_pct(cmd[11:])         # applied by _apply_brightness (the night schedule may override it)
+        elif cmd.startswith("away:"):
+            ev = cmd[5:]
+            if ev in ("lock", "sleep", "shutdown"):
+                self.away = ev
+            elif ev == "unlock":
+                if self.away in ("lock", "sleep"):
+                    self.away = None             # a shutdown in progress is not undone
+            elif ev == "resume":
+                self.display.invalidate()
+                if self.away == "sleep":
+                    self.away = None
+        elif cmd.startswith("web:"):
+            self.web_wanted = {"on": True, "off": False}.get(cmd[4:], not self.web_enabled())
+            self._save_state()
+            self._sync_web()
+        elif cmd == "update:check":
+            threading.Thread(target=self.updates.check_now, daemon=True).start()
 
     def _poll_control_file(self):
         """Commands from `python -m displaymonitor --send <cmd>` (clean restarts, page selection from scripts)."""
@@ -227,7 +310,7 @@ class App:
 
     def _current(self, snap) -> int:
         now = time.time()
-        for al in self.cfg.get("alerts", []):
+        for al in page_alert_rules(self.cfg):
             if alert_active(al["when"], snap):
                 self.alert_page, self.alert_until = al["page"], now + al.get("hold_s", 30)
                 break
@@ -244,6 +327,53 @@ class App:
         self.index = self.home
         return self.index
 
+    # -- session events (lock / sleep / shutdown) ------------------------------------------------
+    def _on_session(self, event: str):
+        """Called from the session watcher's thread. For a shutdown it returns only after the "Ciao" frame was sent."""
+        if event in ("lock", "sleep", "shutdown"):
+            self.bye_done.clear()
+            self.commands.put(f"away:{event}")
+            if event == "shutdown":
+                self.bye_done.wait(4.0)
+        elif event in ("unlock", "resume"):
+            self.commands.put(f"away:{event}")
+
+    # -- what is on screen ----------------------------------------------------------------------
+    def _night(self) -> bool:
+        return night_active(self.cfg.get("night"))
+
+    def _compose(self, snap: dict, now: float):
+        """The frame to show now and what it is: 'away' | 'alarm' | 'night' | 'page'."""
+        away_cfg = self.cfg.get("away") or {}
+        away_on = bool(away_cfg.get("enabled", True))
+        if self.away == "shutdown" and away_on:
+            return self._away_frame(away_cfg), "away"
+        alarm = self.alarm.update(snap, now)
+        if alarm:
+            return self.renderer.render_alert(alarm, int(now) % 2 == 0, snap), "alarm"
+        if self.away and away_on:
+            return self._away_frame(away_cfg), "away"
+        if self._night() and str((self.cfg.get("night") or {}).get("mode", "dim")) == "off":
+            return Image.new("RGB", (480, 320), (0, 0, 0)), "night"
+        idx = self._current(snap)
+        return self.renderer.render(self.pages[idx], snap, idx, len(self.pages)), "page"
+
+    def _away_frame(self, away_cfg: dict):
+        default = "Ciao" if self.lang == "it" else "Bye"
+        sub = AWAY_TEXT.get(self.lang, AWAY_TEXT["en"]).get(self.away or "lock", "") if away_cfg.get("subtitle", True) else ""
+        return self.renderer.render_message(str(away_cfg.get("text", default)), sub)
+
+    def _apply_brightness(self, kind: str):
+        """Backlight: an alarm wakes the display to 100 %, the night schedule dims it, otherwise what the user chose."""
+        if kind == "alarm" and self.alarm.wake:
+            want = 100
+        elif self._night():
+            want = night_brightness(self.cfg.get("night"))
+        else:
+            want = self.base_brightness
+        if want != self.display.brightness:
+            self.display.set_brightness(want)
+
     # -- run ------------------------------------------------------------------------------------
     def run(self):
         # Clean-exit marker: if it is still there, the last run was killed (possibly mid-bitmap) and the display's
@@ -256,6 +386,9 @@ class App:
         with open(flag, "w") as f:
             f.write(f"{os.getpid()} {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         self.sensors.start()
+        self.updates.start()
+        self.session.start()
+        self._sync_web()
         refresh = float(self.cfg.get("refresh_s", 1.0))
         last_retry = 0.0
         try:
@@ -277,15 +410,27 @@ class App:
                 if not self.display.connected and t0 - last_retry >= 2.0:
                     last_retry = t0
                     self.display.connect()
-                if self.display.connected:
+                if self.display.connected or self.web.running or self.away == "shutdown":
                     snap = self.sensors.snapshot()
-                    idx = self._current(snap)
-                    img = self.renderer.render(self.pages[idx], snap, idx, len(self.pages))
-                    self.display.show(rgb565(img))
-                    log.debug("page %s: %d rects, %d bytes, %.0f ms", self.pages[idx]["id"],
-                              self.display.last_rects, self.display.last_bytes, (time.time() - t0) * 1000)
-                time.sleep(max(0.05, refresh - (time.time() - t0)))
+                    snap["update_available"] = self.updates.available
+                    img, kind = self._compose(snap, t0)
+                    self._apply_brightness(kind)
+                    self.last_frame, self.frame_seq = img, self.frame_seq + 1
+                    if self.display.connected:
+                        self.display.show(rgb565(img))
+                    log.debug("%s: %d rects, %d bytes, %.0f ms", kind, self.display.last_rects, self.display.last_bytes,
+                              (time.time() - t0) * 1000)
+                    if self.away == "shutdown":      # the session is ending: the "Ciao" frame is out, nothing more to do
+                        self.bye_done.set()
+                        log.info("shutdown screen shown, exiting")
+                        return
+                self.commands.wake.wait(max(0.05, refresh - (time.time() - t0)))
+                self.commands.wake.clear()
         finally:
+            self.bye_done.set()
+            self.session.stop()
+            self.updates.stop()
+            self.web.stop()
             self.sensors.stop()
             self.display.disconnect()
             try:

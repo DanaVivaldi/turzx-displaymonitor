@@ -124,7 +124,19 @@ def aurora():
     save(vignette(a, 0.55), "aurora.jpg")
 
 
-CY, BL, VI, PK = (0, 205, 255), (35, 95, 255), (150, 70, 255), (210, 80, 255)
+NEON = dict(  # the four accent colours, the base gradient, the hex-grid colour and the fills of the four slashes
+    cy=(0, 205, 255), bl=(35, 95, 255), vi=(150, 70, 255), pk=(210, 80, 255),
+    stops=[(0.0, (4, 10, 34)), (0.45, (8, 20, 78)), (0.8, (28, 16, 92)), (1.0, (40, 14, 104))],
+    hexc=(110, 190, 255), fills=[(26, 70, 190), (70, 36, 170), (20, 80, 200), (60, 30, 150)])
+EMBER = dict(cy=(255, 140, 30), bl=(235, 40, 50), vi=(200, 30, 140), pk=(255, 90, 160),
+             stops=[(0.0, (10, 3, 6)), (0.45, (38, 8, 14)), (0.8, (64, 10, 28)), (1.0, (84, 12, 38))],
+             hexc=(255, 150, 110), fills=[(150, 40, 30), (110, 20, 80), (160, 60, 20), (100, 20, 60)])
+TOXIC = dict(cy=(70, 255, 170), bl=(20, 190, 130), vi=(0, 160, 210), pk=(190, 255, 70),
+             stops=[(0.0, (2, 10, 8)), (0.45, (5, 30, 26)), (0.8, (8, 44, 38)), (1.0, (10, 58, 50))],
+             hexc=(110, 255, 190), fills=[(20, 120, 80), (10, 90, 110), (30, 130, 60), (10, 80, 70)])
+SAKURA = dict(cy=(255, 120, 200), bl=(180, 70, 255), vi=(110, 60, 255), pk=(255, 70, 170),
+              stops=[(0.0, (12, 4, 26)), (0.45, (32, 8, 62)), (0.8, (58, 12, 90)), (1.0, (78, 14, 102))],
+              hexc=(240, 170, 255), fills=[(150, 40, 150), (90, 40, 170), (130, 50, 190), (110, 30, 120)])
 
 
 def _glow(layer, r1=3, r2=14, k1=0.9, k2=1.1):
@@ -133,13 +145,14 @@ def _glow(layer, r1=3, r2=14, k1=0.9, k2=1.1):
     return ImageChops.add(out, b.point(lambda v: int(v * k2)))
 
 
-def neon():
-    """Blue / cyan / violet: angular cuts, hex grid and circuit traces (gaming-hardware flavour, no brand marks)."""
-    rng = np.random.default_rng(690)
+def _neon(name, seed, P):
+    """Angular cuts, hex grid and circuit traces in the colours of palette P (gaming-hardware flavour, no brand marks)."""
+    rng = np.random.default_rng(seed)
+    CY, BL, VI, PK = P["cy"], P["bl"], P["vi"], P["pk"]
     # --- base: deep navy -> indigo diagonal gradient
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     t = np.clip((xx / W) * 0.45 + (yy / H) * 0.55, 0, 1)
-    stops = [(0.0, (4, 10, 34)), (0.45, (8, 20, 78)), (0.8, (28, 16, 92)), (1.0, (40, 14, 104))]
+    stops = P["stops"]
     base = np.stack([np.interp(t, [p for p, _ in stops], [c[i] for _, c in stops]) for i in range(3)], -1)
 
     # soft colour clouds
@@ -161,7 +174,7 @@ def neon():
             hd.line(pts + [pts[0]], fill=255, width=1)
     fade = np.clip(((xx / W) * 0.9 + (1 - yy / H) * 0.5) - 0.35, 0, 1) ** 1.2
     hexl = Image.fromarray((np.asarray(hexl, np.float32) * fade * 0.30).astype(np.uint8))
-    img = ImageChops.add(img, Image.merge("RGB", [hexl.point(lambda v: int(v * c / 255)) for c in (110, 190, 255)]))
+    img = ImageChops.add(img, Image.merge("RGB", [hexl.point(lambda v: int(v * c / 255)) for c in P["hexc"]]))
 
     # --- big angular slashes (ROG-style cuts)
     def poly(layer_draw, pts, fill=None, line=None, w=2):
@@ -171,10 +184,10 @@ def neon():
     fill = Image.new("RGB", (W, H)); fd = ImageDraw.Draw(fill)
     edge = Image.new("RGB", (W, H)); ed = ImageDraw.Draw(edge)
     slashes = [  # (points, fill colour, edge colour)
-        ([(-40, 470), (560, 160), (700, 160), (100, 520)], (26, 70, 190), CY),
-        ([(260, 700), (820, 330), (1000, 330), (440, 700)], (70, 36, 170), VI),
-        ([(560, -40), (780, -40), (560, 120), (480, 120)], (20, 80, 200), BL),
-        ([(-40, 120), (200, -40), (300, -40), (-40, 210)], (60, 30, 150), PK),
+        ([(-40, 470), (560, 160), (700, 160), (100, 520)], P["fills"][0], CY),
+        ([(260, 700), (820, 330), (1000, 330), (440, 700)], P["fills"][1], VI),
+        ([(560, -40), (780, -40), (560, 120), (480, 120)], P["fills"][2], BL),
+        ([(-40, 120), (200, -40), (300, -40), (-40, 210)], P["fills"][3], PK),
     ]
     for pts, f, e in slashes:
         poly(fd, pts, fill=tuple(int(c * .55) for c in f))
@@ -212,9 +225,25 @@ def neon():
     a *= (1 - 0.5 * np.clip(d - 0.4, 0, 1))[..., None]
     a *= (1 - 0.06 * (yy % 4 < 1))[..., None]
     a += rng.normal(0, 2.0, a.shape)
-    save(a, "neon.jpg")
+    save(a, name)
+
+
+def neon():
+    _neon("neon.jpg", 690, NEON)
+
+
+def neon_ember():
+    _neon("neon-ember.jpg", 691, EMBER)
+
+
+def neon_toxic():
+    _neon("neon-toxic.jpg", 692, TOXIC)
+
+
+def neon_sakura():
+    _neon("neon-sakura.jpg", 693, SAKURA)
 
 
 if __name__ == "__main__":
-    for fn in (nebula, grid, carbon, sunset, aurora, neon):
+    for fn in (nebula, grid, carbon, sunset, aurora, neon, neon_ember, neon_toxic, neon_sakura):
         fn()

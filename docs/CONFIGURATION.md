@@ -123,6 +123,71 @@ Cards are stacked from the top; `h` is the height in px (all heights + 8 px gaps
 
 `bar: {color: heat}` colours the bar with the same scheme as the text.
 
+## Night schedule, "Ciao" screen, temperature alarm, web preview, updates
+
+All of these are in `config.yaml` and hot-reload.
+
+```yaml
+night:                  # dim the backlight (or switch the screen off) between two times
+  enabled: false
+  from: "23:00"
+  to: "07:00"           # earlier than `from`: the window wraps over midnight
+  mode: dim             # dim | off (off = black screen, backlight 0 %)
+  brightness: 10        # % while dimmed
+```
+
+`display.brightness` stays what you chose (tray, `--send brightness:N`); the schedule overrides it only inside the window.
+
+```yaml
+away:                   # screen locked / PC sleeping / shutting down / signing out
+  enabled: true
+  text: "Ciao"          # the one big word, on the theme's own background and logos
+  subtitle: true        # a small line under it ("screen locked", "sleeping", "shutting down")
+```
+
+On **shutdown or log-off** the program draws the screen, waits until it has been sent, and exits cleanly: the display keeps showing it.
+On lock / sleep it returns to the pages by itself when you unlock. `--send away:lock` and `--send away:unlock` try it by hand.
+
+```yaml
+alerts:
+  temperature:          # the full-screen alarm
+    enabled: true
+    threshold: 85       # °C: every component ...
+    thresholds: {cpu: 90, gpu: 83, ram: 60, disk: 65, mb: 70}    # ... unless listed here
+    hysteresis: 3       # ends once the part is 3 °C below its limit
+    min_show_s: 15      # but never sooner than this
+    rotate_s: 6         # several parts too hot: they alternate
+    wake: true          # backlight to 100 % during the alarm, even in the night window
+  pages: []             # the older "show this page when <condition>" rules: [{page: memory, when: "mem_pct >= 92", hold_s: 30}]
+```
+
+Components: `cpu` (package temperature, with load / power / clock / hottest core), `gpu` (core, with hot spot / load / power / fan / VRAM),
+`ram` (modules, needs `sensors.ram_temp`), `disk` (the hottest drive: its name, type, space used, health) and `mb` (hottest motherboard probe).
+The alarm screen uses the theme's background and shows the component, the device name, the temperature, how far over the limit it is, a gauge with the limit marked, and the details.
+`alerts:` written as a plain list still works (page rules only, no alarm screen).
+
+```yaml
+web:                    # live preview in a browser, page buttons, brightness slider (tray: "Web preview" tick)
+  enabled: false
+  host: 127.0.0.1       # only this PC. For a phone: 0.0.0.0 AND a token
+  port: 8765
+  token: ""             # required when host is not local; open http://<pc>:8765/?t=<token>
+```
+
+The tray tick is remembered in `config/state.yaml` and wins over `web.enabled`. Only `home | next | prev | rotate | pin | reload | page:<id> | brightness:<n>`
+are accepted from the page; requests with a foreign `Host` header are refused while it listens locally (DNS-rebinding guard).
+
+```yaml
+updates:                # one GET to GitHub at start-up and every interval_h hours: nothing is sent
+  check: true
+  interval_h: 24
+  # repo: DanaVivaldi/turzx-displaymonitor
+```
+
+A newer version shows as *update vX.Y.Z* at the bottom-right of the screen and a tray item that opens the release page.
+`python -m displaymonitor --check-update` says what is available; `--update` installs it (asks first; `git pull` in a clone, otherwise the repository
+zip is unpacked over the program files — your `config/`, `assets/` and `logs/` are never touched).
+
 ## Sensor keys
 
 Run `python -m displaymonitor --dump-sensors` to see the live values (and `--demo`'s `displaymonitor/demo.py` for the full list with types).
@@ -161,12 +226,13 @@ Any page can use `requires: weather` (or a list) to appear only when that featur
 
 ```
 python -m displaymonitor                    run
-python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | reload | page:<id> | brightness:<0-100> | logo:left:<name> | logo:right:<name|none> | logo:reset
+python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | reload | page:<id> | brightness:<0-100> | logo:left:<name> | logo:right:<name|none> | logo:reset | web:on|off|toggle | away:lock|unlock|sleep|resume|shutdown | update:check
 python -m displaymonitor --preview          PNGs with real sensors  -> docs/preview/
 python -m displaymonitor --demo             PNGs with invented data -> docs/img/
 python -m displaymonitor --demo --theme ember --compact     try a theme preset / the compact layout
 python -m displaymonitor --dump-sensors     print the sensor snapshot
 python -m displaymonitor --debug            verbose log (rectangles / bytes / ms per frame)
 python -m displaymonitor --no-tray          without the tray icon
+python -m displaymonitor --version | --check-update | --update [--yes]
 python -m displaymonitor --rotate 5         override rotate_s
 ```

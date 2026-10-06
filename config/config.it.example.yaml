@@ -61,10 +61,44 @@ sensors:
 #   city: "La mia citta'"  # solo un'etichetta: {weather_city}
 #   refresh_min: 30
 
-# Allarmi: se la condizione e' vera la pagina indicata passa in primo piano per hold_s secondi.
-# Le condizioni usano le chiavi dei sensori (vedi `python -m displaymonitor --dump-sensors`).
+# Orario notturno: tra i due orari la retroilluminazione si abbassa (mode: dim) o lo schermo diventa nero (mode: off).
+night:
+  enabled: false
+  from: "23:00"
+  to: "07:00"           # puo' essere prima di `from`: la finestra attraversa la mezzanotte
+  mode: dim             # dim | off
+  brightness: 10        # % di retroilluminazione mentre e' abbassata
+
+# Schermo bloccato / PC in sospensione / spegnimento / disconnessione: il display mostra questa parola sullo sfondo del tema.
+away:
+  enabled: true
+  text: "Ciao"
+  subtitle: true        # una riga piccola sotto: "schermo bloccato", "sospensione", "spegnimento"
+
+# Allarme temperatura: quando un componente supera il suo limite tutto lo schermo diventa un allarme con i dettagli
+# (nome, temperatura, carico, potenza, ventola ...). Finisce quando il pezzo scende di `hysteresis` gradi sotto il limite.
 alerts:
-  - {page: cpu, when: "cpu_temp is not None and cpu_temp >= 85", hold_s: 30}
-  - {page: gpu, when: "gpu_temp is not None and gpu_temp >= 80", hold_s: 30}
-  - {page: memory, when: "mem_pct is not None and mem_pct >= 92", hold_s: 30}
-  - {page: disks, when: "disk_temp_max is not None and disk_temp_max >= 65", hold_s: 30}
+  temperature:
+    enabled: true
+    threshold: 85       # °C, per tutti i componenti ...
+    # thresholds: {cpu: 90, gpu: 83, ram: 60, disk: 65, mb: 70}    # ... salvo quelli indicati qui
+    hysteresis: 3
+    min_show_s: 15
+    rotate_s: 6         # piu' pezzi troppo caldi insieme: si alternano
+    wake: true          # retroilluminazione al 100 % mentre l'allarme e' visibile, anche durante l'orario notturno
+  # Le regole piu' vecchie: mostra una pagina per hold_s secondi finche' una condizione e' vera (chiavi: python -m displaymonitor --dump-sensors)
+  pages: []
+  #  - {page: memory, when: "mem_pct is not None and mem_pct >= 92", hold_s: 30}
+
+# Anteprima web locale dello schermo, con i pulsanti delle pagine (attivabile anche dalla tray). Raggiungibile solo da questo PC.
+# Per altri dispositivi imposta host: 0.0.0.0 E un token, poi apri http://<questo-pc>:8765/?t=<token>
+web:
+  enabled: false
+  host: 127.0.0.1
+  port: 8765
+  token: ""
+
+# Controlla sul repository GitHub se esiste una versione piu' nuova (una sola GET, non viene inviato nulla). `python -m displaymonitor --update` la installa.
+updates:
+  check: true
+  interval_h: 24

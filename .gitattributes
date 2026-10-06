@@ -1,3 +1,5 @@
 * text=auto
 *.png binary
 *.ps1 text eol=crlf
+*.sh text eol=lf
+*.rules text eol=lf

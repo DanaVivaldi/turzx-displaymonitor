@@ -49,7 +49,10 @@ DEFAULT_THEME = {
     "font_bold": None,
 }
 COLOR_KEYS = ("bg", "panel", "edge", "track", "cyan", "cyan_dark", "blue", "magenta", "amber", "white", "dim", "glow_color")
-FONT_FALLBACKS = (r"C:\Windows\Fonts\bahnschrift.ttf", r"C:\Windows\Fonts\segoeui.ttf", r"C:\Windows\Fonts\arial.ttf")
+FONT_FALLBACKS = (r"C:\Windows\Fonts\bahnschrift.ttf", r"C:\Windows\Fonts\segoeui.ttf", r"C:\Windows\Fonts\arial.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+                  "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+                  "/System/Library/Fonts/Helvetica.ttc", "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf")
 
 
 def to_rgb(v):
@@ -201,6 +204,7 @@ class Renderer:
             self.cards_top, self.cards_bottom, self.legend_y, self.stretch = 10, 300, 8, True
         self._bg_cache = {}
         self._bg = self._background_for(None)
+        self.update_text = None           # set by the app: shown small at the bottom-right when a newer version exists
 
     # -- helpers --------------------------------------------------------------------------------
     @staticmethod
@@ -208,7 +212,8 @@ class Renderer:
         for cand in (path,) + FONT_FALLBACKS:
             if cand and os.path.exists(project_path(cand)):
                 return project_path(cand)
-        raise FileNotFoundError("no usable font: set theme.font to a .ttf file")
+        log.warning("no TrueType font found: using Pillow's built-in one (set theme.font to a .ttf file for a better look)")
+        return ""
 
     def font(self, px, bold=False):
         key = (px, bold)
@@ -218,7 +223,7 @@ class Renderer:
             if bold and self.t.get("font_bold") and os.path.exists(project_path(self.t["font_bold"])):
                 f = ImageFont.truetype(project_path(self.t["font_bold"]), sc(px))
             else:
-                f = ImageFont.truetype(self._font_path, sc(px))
+                f = ImageFont.truetype(self._font_path, sc(px)) if self._font_path else ImageFont.load_default(size=sc(px))
                 if bold:
                     try:
                         f.set_variation_by_name("Bold")      # variable fonts (Bahnschrift) have a real bold
@@ -381,26 +386,27 @@ class Renderer:
         k = min(self.logo_h / lg.height, self.logo_max_w / lg.width)        # fit both the height and the width budget
         return lg.resize((max(1, int(lg.width * k * S)), max(1, int(lg.height * k * S))), Image.LANCZOS)
 
-    def _background_for(self, logos):
-        """Static background (picture, glow, brackets, logos). `logos` = a page's own pair, or None for the theme's pair; cached."""
-        key = tuple(str(x) if not isinstance(x, dict) else repr(sorted(x.items())) for x in logos) if logos else None
+    def _background_for(self, logos, decor=True):
+        """Static background (picture, glow, brackets, logos). `logos` = a page's own pair, or None for the theme's pair; cached.
+        decor=False leaves out the ring's glow, backdrop and disc (the message and alarm screens)."""
+        key = (tuple(str(x) if not isinstance(x, dict) else repr(sorted(x.items())) for x in logos) if logos else None, decor)
         if key not in self._bg_cache:
-            self._bg_cache[key] = self._build_background(logos)
+            self._bg_cache[key] = self._build_background(logos, decor)
         return self._bg_cache[key]
 
-    def _build_background(self, page_logos=None):
+    def _build_background(self, page_logos=None, decor=True):
         t = self.t
         img = self._background_picture() or Image.new("RGB", (W * S, H * S), t["bg"])
         cx, cy = self.ring_c
         rs = self.rs
-        if t.get("glow", True):
+        if decor and t.get("glow", True):
             glow = Image.new("RGB", img.size, (0, 0, 0))
             g = 120 * rs
             glow_box = box(8, 60, 228, 300) if self.header else box(cx - g, cy - g, cx + g, cy + g)
             ImageDraw.Draw(glow).ellipse(glow_box, fill=t["glow_color"])
             glow = glow.filter(ImageFilter.GaussianBlur(sc(40)))
             img = Image.blend(img, Image.composite(glow, img, glow.convert("L")), 0.55)
-        if float(t.get("ring_backdrop") or 0) > 0:      # dark translucent disc behind the ring (readability on photos)
+        if decor and float(t.get("ring_backdrop") or 0) > 0:      # dark translucent disc behind the ring (readability on photos)
             ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
             br = 92 * rs + 10 * rs
             ImageDraw.Draw(ov).ellipse(box(cx - br, cy - br, cx + br, cy + br),
@@ -424,6 +430,8 @@ class Renderer:
             if lg is not None:             # header layout: top-aligned at top_y ; compact layout: bottom-aligned on y = top_y
                 y0 = sc(top_y) if self.header else sc(top_y) - lg.height
                 img.paste(lg, (sc(x) - (lg.width if right else 0), y0), lg)
+        if not decor:
+            return img
         # core disc with magenta glow (static)
         disc = Image.new("RGB", img.size, (0, 0, 0))
         dd = ImageDraw.Draw(disc)
@@ -490,6 +498,87 @@ class Renderer:
             x = W / 2 - total * 7 + i * 14 + 7
             d.ellipse(box(x - 3, 309, x + 3, 315), fill=t["cyan"] if i == index else t["track"])
         self.draw_text(d, 14, 312, f"{index + 1} / {total}", 9.5, t["dim"], "lm")
+        if snap.get("update_available"):
+            self.draw_text(d, W - 12, 312, f"update v{snap['update_available']}", 9.5, t["cyan"], "rm")
+        return img.resize((W, H), Image.LANCZOS)
+
+    # -- full-screen messages -------------------------------------------------------------------
+    def _glow_text(self, img, xy, text, px, fill, glow, anchor="mm", bold=True, blur=7, strength=1.0):
+        """Text with a soft coloured halo; `img` is the 3x canvas. Returns the new canvas."""
+        layer = Image.new("RGB", img.size, (0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        font = self.font(px, bold)
+        stroke = sc(px * 0.035) if bold and self._faux_bold(px, bold) else 0
+        ld.text((sc(xy[0]), sc(xy[1])), text, font=font, fill=glow, anchor=anchor, stroke_width=stroke, stroke_fill=glow)
+        layer = layer.filter(ImageFilter.GaussianBlur(sc(blur)))
+        if strength != 1.0:
+            layer = layer.point(lambda v: min(255, int(v * strength)))
+        img = Image.blend(img, Image.composite(layer, img, layer.convert("L")), 0.85) if strength else img
+        ImageDraw.Draw(img).text((sc(xy[0]), sc(xy[1])), text, font=font, fill=fill, anchor=anchor, stroke_width=stroke, stroke_fill=fill)
+        return img
+
+    def render_message(self, text: str, sub: str = "") -> Image.Image:
+        """The 'Ciao' screen: the theme's background and logos, one big word in the middle (screen locked / PC going off)."""
+        t = self.t
+        img = self._background_for(None, decor=False).copy()
+        dim = Image.new("RGB", img.size, t["bg"])
+        img = Image.blend(img, dim, 0.35)
+        px = 84 if len(text) <= 6 else (60 if len(text) <= 10 else 40)
+        img = self._glow_text(img, (W / 2, H / 2 - 8), text, px, t["white"], t["cyan"], blur=9)
+        if sub:
+            self.draw_text(ImageDraw.Draw(img), W / 2, H / 2 + 52, sub, 14, t["dim"], "mm")
+        return img.resize((W, H), Image.LANCZOS)
+
+    def render_alert(self, a: dict, blink: bool = False, snap: dict | None = None) -> Image.Image:
+        """Full-screen overheating alarm for the component described by `a` (see alerts.TempAlarm.update)."""
+        t = self.t
+        red = t["heat"][-1]
+        img = self._background_for(None, decor=False).copy()
+        tint = Image.new("RGB", img.size, (150, 6, 14) if blink else (96, 4, 10))
+        img = Image.blend(img, tint, 0.62 if blink else 0.5)
+        ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        od.rounded_rectangle(box(190 + 52, 66, W - 12, 236), radius=sc(10), fill=(0, 0, 0, 120), outline=(*red, 255), width=sc(1))
+        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+        d = ImageDraw.Draw(img)
+        # pulsing frame
+        d.rounded_rectangle(box(3, 3, W - 3, H - 3), radius=sc(10), outline=red if blink else lerp(red, (0, 0, 0), 0.5), width=sc(5 if blink else 3))
+        # warning triangle + title
+        tri = [(30, 14), (54, 54), (6, 54)]
+        d.polygon([(sc(x), sc(y)) for x, y in tri], fill=red, outline=(255, 255, 255), width=sc(1.5))
+        self.draw_text(d, 30, 44, "!", 26, (255, 255, 255), "mm", bold=True)
+        title = f"{a['title']} · {a['label']}"
+        self.draw_text(d, 68, 26, title, 19 if len(title) < 26 else 15, (255, 255, 255), "lm", bold=True)
+        self.draw_text(d, 68, 47, a["name"], 12, (255, 205, 205), "lm")
+        # giant temperature with a halo
+        temp = f"{a['temp']:.0f}"
+        w_num = self.font(96, True).getlength(temp) / S
+        img = self._glow_text(img, (14 + w_num / 2, 128), temp, 96, (255, 255, 255), red, blur=10)
+        d = ImageDraw.Draw(img)
+        self.draw_text(d, 18 + w_num, 100, "°C", 30, (255, 255, 255), "lm", bold=True)
+        self.draw_text(d, 18, 192, a["over"], 14, (255, 210, 120), "lm", bold=True)
+        self.draw_text(d, 18, 210, a["limit_text"], 11, (255, 205, 205), "lm")
+        # gauge: 0..120 °C with the limit marked
+        gx0, gx1, gy = 18, 232, 232
+        top = max(120.0, a["limit"] + 25, a["temp"] + 5)
+        d.rounded_rectangle(box(gx0, gy, gx1, gy + 9), radius=sc(4.5), fill=(30, 6, 10))
+        frac = max(0.0, min(1.0, a["temp"] / top))
+        d.rounded_rectangle(box(gx0, gy, gx0 + max(9, (gx1 - gx0) * frac), gy + 9), radius=sc(4.5), fill=red)
+        mx = gx0 + (gx1 - gx0) * a["limit"] / top
+        d.line([sc(mx), sc(gy - 4), sc(mx), sc(gy + 13)], fill=(255, 255, 255), width=sc(1.6))
+        # details
+        rows = a.get("rows", [])
+        y0 = 80
+        pitch = min(34.0, 150.0 / max(1, len(rows)))
+        for i, (label, value) in enumerate(rows):
+            y = y0 + i * pitch + pitch / 2
+            self.draw_text(d, 252 + 10, y - 7, str(label), 10.5, (255, 190, 190), "lm")
+            self.draw_text(d, W - 24, y + 5, str(value), 17 if pitch > 28 else 14, (255, 255, 255), "rm", bold=True)
+        # footer: which alarm of how many + clock
+        if a.get("count", 1) > 1:
+            self.draw_text(d, 18, 300, f"{a['pos']} / {a['count']}", 11, (255, 205, 205), "lm")
+        if snap and snap.get("time"):
+            self.draw_text(d, W - 18, 300, str(snap["time"]), 12, (255, 205, 205), "rm")
         return img.resize((W, H), Image.LANCZOS)
 
     # -- ring -----------------------------------------------------------------------------------
