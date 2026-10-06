@@ -51,6 +51,8 @@ def demo_snapshot(lang: str = "en") -> dict:
         "net_down_val": "205", "net_down_unit": "KB/s", "net_down_str": "205 KB/s",
         "net_up_val": "32.0", "net_up_unit": "KB/s", "net_up_str": "32.0 KB/s", "net_down_pct": 62.0, "net_up_pct": 38.0,
         # system
+        "weather_city": "My town", "weather_temp": 21.4, "weather_feels": 20.1, "weather_humidity": 58.0, "weather_wind": 12.0,
+        "weather_code": 2, "weather_desc": "Partly cloudy", "weather_age_min": 7.0,
         "sys_uptime": 3 * 86400 + 5 * 3600, "uptime_str": "3d 05h" if lang == "en" else "3g 05h", "sys_procs": 214,
         "proc_cpu": [{"name": "game", "cpu": 21.4, "mem_mb": 5200}, {"name": "browser", "cpu": 6.8, "mem_mb": 3100},
                      {"name": "code", "cpu": 3.2, "mem_mb": 1200}, {"name": "chat", "cpu": 1.1, "mem_mb": 800}],

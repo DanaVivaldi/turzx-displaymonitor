@@ -16,6 +16,8 @@ from collections import deque
 
 import psutil
 
+from .weather import Weather
+
 log = logging.getLogger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,6 +71,7 @@ class Sensors:
         self._net_prev = None              # (t, recv, sent)
         self._io_prev = None               # (t, read, write)
         self._hist = {"net_down": deque(maxlen=60), "net_up": deque(maxlen=60)}
+        self.weather = Weather(cfg.get("weather"), self.lang)
         self.admin = bool(ctypes.windll.shell32.IsUserAnAdmin()) if os.name == "nt" else False
 
     # -- lifecycle ------------------------------------------------------------------------------
@@ -81,11 +84,13 @@ class Sensors:
         for p in psutil.process_iter(["cpu_percent"]):  # prime per-process CPU counters
             pass
         self._poll_all(first=True)
+        self.weather.start()
         self._thread = threading.Thread(target=self._loop, name="sensors", daemon=True)
         self._thread.start()
 
     def stop(self):
         self._stop.set()
+        self.weather.stop()
         if self._thread is not None:      # never Close() LHM while the poll thread is inside Update(): that crashes the process
             self._thread.join(timeout=10)
         try:
@@ -443,4 +448,5 @@ class Sensors:
         s["time_s"] = now.strftime("%H:%M:%S")
         s["date"] = f"{DAYS[self.lang][now.weekday()]} {now.day:02d} {MONTHS[self.lang][now.month - 1]}"
         s["clock_seconds"] = [100 if i <= now.second else 0 for i in range(60)]
+        s.update(self.weather.snapshot())
         return s

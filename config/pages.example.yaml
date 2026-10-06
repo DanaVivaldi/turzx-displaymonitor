@@ -335,3 +335,35 @@ pages:
           - {label: CPU, text: "{cpu_load:.0f}%", value: cpu_load}
           - {label: GPU, text: "{gpu_load:.0f}%", value: gpu_load}
           - {label: RAM, text: "{mem_pct:.0f}%", value: mem_pct}
+
+  # ------------------------------------------------------------------------------------------
+  # Weather (Open-Meteo). Hidden unless `weather: {enabled: true, latitude, longitude}` is set in config.yaml.
+  - id: weather
+    title: WEATHER
+    requires: weather
+    ring:
+      arcs:
+        - {value: weather_humidity, min: 0, max: 100, color: cyan, radius: 90, width: 11}
+      center:
+        label: "{weather_city}"
+        big: "{weather_temp:.0f}°"
+        line1: "{weather_desc}"
+        line2: "feels {weather_feels:.0f}°"
+    cards:
+      - kind: main
+        h: 78
+        title: TEMPERATURE
+        big: "{weather_temp:.1f}°C"
+        mid: "feels {weather_feels:.0f}°C"
+        bar: {value: weather_temp, min: -10, max: 40, color: cyan}
+      - kind: main
+        h: 66
+        title: HUMIDITY
+        big: "{weather_humidity:.0f}%"
+        bar: {value: weather_humidity, max: 100, color: cyan}
+      - kind: stats
+        h: 66
+        title: WIND
+        items:
+          - {label: Speed, text: "{weather_wind:.0f} km/h"}
+          - {label: Updated, text: "{weather_age_min:.0f} min ago"}

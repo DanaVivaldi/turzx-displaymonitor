@@ -25,6 +25,8 @@ If your own file is missing the example is used. Changes take effect after a res
 | `display.refresh_band` | `8` | rows resent every frame, cycling (self‑healing); `0` = off |
 | `display.flood_bytes` | `2200000` | recovery flood after an abnormal exit |
 | `refresh_s` | `1.0` | seconds between frames |
+| `hot_reload` | `true` | re-read `config.yaml`, `pages.yaml` and theme presets when they change (checked every second) and apply them without restarting. Sensor settings (poll periods, network interface) still need a restart. A broken file keeps the previous configuration and is reported in the log. Also: tray *Reload configuration*, `--send reload` |
+| `weather.*` | off | the optional weather page, see below |
 | `home_page` | first page | id of the recap page, shown at every start |
 | `stay_on_selected` | `true` | a page picked from the tray stays until *Back to recap* (else it returns after `peek_s`) |
 | `rotate_s` | `0` | `0` = no automatic rotation, `N` = seconds per page (also toggled from the tray) |
@@ -118,11 +120,28 @@ Run `python -m displaymonitor --dump-sensors` to see the live values (and `--dem
 Motherboard probes have no official names: compare `mb_t1…` with your BIOS and rename the card labels. Probes that are not connected read garbage
 (e.g. 21 / 81 / 110 °C on the tested board): list their numbers in `sensors.mb_ignore_temps`.
 
+## Weather (optional)
+
+```yaml
+weather:
+  enabled: true
+  latitude: 43.7
+  longitude: 13.2
+  city: "My town"        # just a label: {weather_city}
+  refresh_min: 30
+```
+
+A page with `requires: weather` (the example `weather` page) is hidden until this is enabled. The only network request is a GET to
+`api.open-meteo.com` with your coordinates (no key, no account); it runs in a background thread, retries with exponential backoff (5 → 80 s) and the last
+good reading is kept in `logs/weather.json`, so the screen never shows a stale value after a restart. Keys: `weather_temp`, `weather_feels`,
+`weather_humidity`, `weather_wind` (km/h), `weather_code`, `weather_desc` (text in your `date_language`), `weather_city`, `weather_age_min`.
+Any page can use `requires: weather` (or a list) to appear only when that feature is on.
+
 ## Command line
 
 ```
 python -m displaymonitor                    run
-python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | page:<id> | brightness:<0-255> | logo:left:<name> | logo:right:<name|none> | logo:reset
+python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | reload | page:<id> | brightness:<0-255> | logo:left:<name> | logo:right:<name|none> | logo:reset
 python -m displaymonitor --preview          PNGs with real sensors  -> docs/preview/
 python -m displaymonitor --demo             PNGs with invented data -> docs/img/
 python -m displaymonitor --demo --theme ember --compact     try a theme preset / the compact layout

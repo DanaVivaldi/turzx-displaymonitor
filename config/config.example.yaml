@@ -51,6 +51,14 @@ sensors:
   ping_s: 5
   mb_ignore_temps: []  # motherboard probes that read garbage (unconnected), e.g. [5] hides "Temperature #5"
 
+# Optional weather page (Open-Meteo: free, no account / key). The only request is a GET to api.open-meteo.com with your coordinates.
+# weather:
+#   enabled: true
+#   latitude: 43.7
+#   longitude: 13.2
+#   city: "My town"        # a label for your pages: {weather_city}
+#   refresh_min: 30
+
 # Alerts: when the condition is true the given page is shown for hold_s seconds.
 # Conditions use sensor keys (see `python -m displaymonitor --dump-sensors`).
 alerts:

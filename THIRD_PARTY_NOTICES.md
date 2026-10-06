@@ -24,6 +24,9 @@ No code was copied. The device protocol is a set of facts documented by the comm
 | [Tedd.TuringScreen](https://github.com/tedd/Tedd.TuringScreen) | MIT | software rotation, the 12 800‑pixel block limit, auto‑recovery |
 | [TelemetryForge](https://github.com/riccione83/TelemetryForge) | MIT | initialisation sequence with HELLO / drain, chunked writes, partial updates |
 | [TURZX-3.5-Custom-Monitor](https://github.com/xlwreally/TURZX-3.5-Custom-Monitor) | MIT | V2 firmware handling and 2 px differential tiles on Windows, scheduled‑task autostart |
+| [TuringMonitor](https://github.com/Bendak/TuringMonitor) | MIT | weather fetched in the background with exponential backoff and a persisted last reading, live reload of the layout |
+| [rebscreen](https://github.com/luisonic2000/rebscreen) | MIT | unit-testing the driver / renderer, CI on every push, the note that Rev A has no documented backlight command |
+| [Rizplay](https://github.com/maximuss2072/rizplay-alpha-build), [igam3-screen](https://github.com/nguyenduchoai/igam3-screen), [Bezel](https://github.com/slipalison/bezel), [usb-lcd-dashboard](https://github.com/viktorkav/usb-lcd-dashboard), [SpotifyStatusIPS](https://github.com/bytequill/SpotifyStatusIPS) | various / closed | only ideas for the roadmap (now playing, night schedule, web preview, shutdown screen) — no code or assets used |
 | [turzx-metrics](https://github.com/ikaromm/turzx-metrics), [turzx-native-monitor](https://github.com/Sermilion/turzx-native-monitor) | GPL‑3.0 | confirmation of the device identification (`1A86:5722`, `USB35INCHIPSV2`) on Linux |
 
 ## Pictures and logos

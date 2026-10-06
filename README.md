@@ -33,6 +33,8 @@ for **Windows 10/11**. It replaces the vendor's `UsbMonitor.exe` with a small Py
 * **One colour language** for every temperature (°C) and utilisation (%): white below 50, green up to 60, then yellow → orange → red up to 100 (thresholds are configurable).
 * **Pages are plain YAML** (`config/pages.yaml`): rings, cards, bars, sparklines, legend, thresholds — no code needed.
 * **Alerts**: if the CPU/GPU/RAM/disks get too hot the relevant page pops up by itself.
+* **Hot reload**: save `config.yaml`, `pages.yaml` or a theme and the display updates by itself, no restart (a broken file is reported in the log and the previous configuration is kept).
+* **Optional weather page** (Open-Meteo: free, no account), cached and retried with backoff so it survives a slow network at boot.
 * **Tray icon**: pick a page (it stays until you go back to the recap), **swap the two logos**, toggle auto‑rotation, brightness, quit.
 * **Make it yours** — colours, background pictures, logos, fonts, translucent cards and a compact layout (big clock, bigger ring) are all settings; six ready-made themes are included and you can save your own as a one-file preset: **[docs/THEMING.md](docs/THEMING.md)**.
 * English and Italian UI.
@@ -121,5 +123,7 @@ informed by [turing-smart-screen-python](https://github.com/mathoudebine/turing-
 [TURZX-3.5-Custom-Monitor](https://github.com/xlwreally/TURZX-3.5-Custom-Monitor) (MIT). Sensor access uses
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (MPL‑2.0, downloaded, not redistributed) and the
 [PawnIO](https://github.com/namazso/PawnIO) driver. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Ideas and what is planned: [docs/ROADMAP.md](docs/ROADMAP.md) · Tests: `python -m pytest` (27 tests, no hardware needed; run on every push by GitHub Actions)
 
 Italiano: [README.it.md](README.it.md)

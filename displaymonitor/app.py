@@ -1,4 +1,5 @@
 """Main loop: sensors -> page renderer -> display (only changed rectangles), page rotation, alerts, reconnect."""
+import glob
 import logging
 import os
 import queue
@@ -26,6 +27,30 @@ def load_config(examples: bool = False):
     return read("config.yaml"), read("pages.yaml")
 
 
+def config_signature() -> tuple:
+    """Modification times of every file that shapes the look: config, pages and theme presets. A change triggers a hot reload."""
+    files = [os.path.join(ROOT, "config", n) for n in ("config.yaml", "config.example.yaml", "pages.yaml", "pages.example.yaml")]
+    files += glob.glob(os.path.join(ROOT, "config", "themes", "*.yaml")) + glob.glob(os.path.join(ROOT, "themes", "*.yaml"))
+    sig = []
+    for f in sorted(files):
+        try:
+            sig.append((f, os.path.getmtime(f)))
+        except OSError:
+            pass
+    return tuple(sig)
+
+
+def enabled_pages(pages_cfg: dict, cfg: dict) -> list:
+    """Pages may declare `requires: weather` (or a list): they are hidden while that feature is switched off in config.yaml."""
+    out = []
+    for p in pages_cfg["pages"]:
+        req = p.get("requires") or []
+        req = [req] if isinstance(req, str) else req
+        if all(bool((cfg.get(r) or {}).get("enabled")) for r in req):
+            out.append(p)
+    return out
+
+
 class _Env(defaultdict):
     def __missing__(self, key):
         return None
@@ -41,7 +66,7 @@ def alert_active(expr: str, snap: dict) -> bool:
 class App:
     def __init__(self, cfg: dict, pages_cfg: dict):
         self.cfg = cfg
-        self.pages = pages_cfg["pages"]
+        self.pages = enabled_pages(pages_cfg, cfg)
         self.sensors = Sensors(cfg)
         self.display = Display(cfg.get("display", {}))
         self.renderer = Renderer(cfg.get("theme"), cfg.get("layout"))
@@ -62,6 +87,35 @@ class App:
         self.state_file = os.path.join(ROOT, "config", "state.yaml")     # choices made from the tray that must survive a restart
         self._config_logos = tuple(self.renderer.t["logos"])
         self._load_state()
+        self._sig = config_signature()
+        self._sig_checked = time.time()
+
+    # -- hot reload -----------------------------------------------------------------------------
+    def reload_config(self, reason: str = "files changed"):
+        """Re-read config / pages / themes and rebuild the renderer without restarting. Sensor settings (poll rates, network
+        interface ...) still need a restart. A broken file keeps the previous configuration and is reported in the log."""
+        self._sig = config_signature()
+        try:
+            cfg, pages_cfg = load_config()
+            pages = enabled_pages(pages_cfg, cfg)
+            if not pages:
+                raise ValueError("no pages left after filtering")
+            renderer = Renderer(cfg.get("theme"), cfg.get("layout"))
+        except Exception as e:  # noqa: BLE001
+            log.warning("config reload failed, keeping the previous configuration: %s", e)
+            return
+        current = self.pages[self.index]["id"] if self.pages else None
+        self.cfg, self.pages, self.renderer = cfg, pages, renderer
+        ids = [p["id"] for p in pages]
+        self.home = ids.index(cfg.get("home_page", ids[0])) if cfg.get("home_page", ids[0]) in ids else 0
+        self.index = ids.index(current) if current in ids else self.home
+        self.stay_on_selected = bool(cfg.get("stay_on_selected", True))
+        self.peek_s = float(cfg.get("peek_s", 30))
+        self.rotate_s = float(cfg.get("rotate_s", 0)) or 12.0
+        self._config_logos = tuple(renderer.t["logos"])
+        self._load_state()
+        self.display.configure(cfg.get("display", {}))
+        log.info("configuration reloaded (%s): %d pages, theme preset %s", reason, len(pages), (cfg.get("theme") or {}).get("preset"))
 
     def _load_state(self):
         try:
@@ -109,6 +163,8 @@ class App:
                     self._show_page(i)
                     if p["id"] == self.pages[self.home]["id"]:
                         self.pinned = False        # picking the home page is simply 'home'
+        elif cmd == "reload":
+            self.reload_config("requested")
         elif cmd == "logo:reset":
             self.renderer.set_logos(*(list(self._config_logos) + [None, None])[:2])
             try:
@@ -171,6 +227,10 @@ class App:
         try:
             while True:
                 t0 = time.time()
+                if self.cfg.get("hot_reload", True) and t0 - self._sig_checked >= 1.0:
+                    self._sig_checked = t0
+                    if config_signature() != self._sig:
+                        self.reload_config()
                 self._poll_control_file()
                 try:
                     while True:

@@ -12,9 +12,9 @@ log = logging.getLogger(__name__)
 
 TEXT = {
     "en": {"home": "Back to recap", "pages": "Show page", "rotate": "Automatic rotation", "brightness": "Brightness",
-           "logo_left": "Left logo", "logo_right": "Right logo", "none": "None", "reset": "Logos from config", "quit": "Quit"},
+           "logo_left": "Left logo", "logo_right": "Right logo", "none": "None", "reset": "Logos from config", "reload": "Reload configuration", "quit": "Quit"},
     "it": {"home": "Torna al riepilogo", "pages": "Mostra pagina", "rotate": "Rotazione automatica", "brightness": "Luminosità",
-           "logo_left": "Logo a sinistra", "logo_right": "Logo a destra", "none": "Nessuno", "reset": "Loghi da configurazione", "quit": "Esci"},
+           "logo_left": "Logo a sinistra", "logo_right": "Logo a destra", "none": "Nessuno", "reset": "Loghi da configurazione", "reload": "Ricarica configurazione", "quit": "Esci"},
 }
 
 
@@ -50,11 +50,12 @@ def start_tray(app):
 
     menu = pystray.Menu(
         pystray.MenuItem(tr["home"], send("home"), default=True),
-        pystray.MenuItem(tr["pages"], pystray.Menu(*[page_item(i, p) for i, p in enumerate(app.pages)])),
+        pystray.MenuItem(tr["pages"], pystray.Menu(lambda: (page_item(i, p) for i, p in enumerate(app.pages)))),
         pystray.MenuItem(tr["rotate"], send("rotate"), checked=lambda item: app.rotate),
         pystray.MenuItem(tr["logo_left"], logo_menu("left")),
         pystray.MenuItem(tr["logo_right"], logo_menu("right")),
         pystray.MenuItem(tr["reset"], send("logo:reset")),
+        pystray.MenuItem(tr["reload"], send("reload")),
         pystray.MenuItem(tr["brightness"], pystray.Menu(
             *[pystray.MenuItem(f"{v}", send(f"brightness:{v}")) for v in (60, 100, 150, 200, 255)])),
         pystray.Menu.SEPARATOR,

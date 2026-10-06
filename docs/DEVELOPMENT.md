@@ -53,6 +53,10 @@ docs/           CONFIGURATION.md, PROTOCOL.md, DEVELOPMENT.md, img/ (demo screen
 
 ## Testing without hardware
 
+`python -m pytest` runs 27 tests in ~2 s and needs no display, no sensors, no admin rights: the driver's rectangle diffing and wire format
+(a fake serial port), every shipped page / theme / layout rendering to a 480×320 image, the colour scheme, the logo library (every shipped logo must have a
+row in `logos/LOGOS.md`), config handling, alerts and the weather decoding. GitHub Actions (`.github/workflows/tests.yml`) runs them on Windows for every push and pull request.
+
 `python -m displaymonitor --demo` renders every page from `demo.py` (no display, no admin, no sensors), `tools/make_screenshots.py` regenerates every image in `docs/img/` (pages, the README grid, the theme gallery) with invented data and a mix of logos from your library.
 `--preview` does the same with your real sensors. There is no automated test suite yet; PRs adding one (renderer snapshot tests, diff/rectangle tests on `Display._diff`) are welcome.
 
