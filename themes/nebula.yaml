@@ -1,0 +1,14 @@
+# Deep-space picture, violet accents, translucent cards.
+background: themes/img/nebula.jpg
+background_dim: 0.10
+panel_opacity: 0.72
+ring_backdrop: 0.35
+glow: false
+bg: "#07081e"
+panel: "#0d1033"
+edge: "#6a5be0"
+track: "#1a1f55"
+cyan: "#8fb4ff"
+cyan_dark: "#3a4a9a"
+dim: "#a9b4e8"
+disc: ["#2a1250", "#4a1a8a", "#7a2aa8"]

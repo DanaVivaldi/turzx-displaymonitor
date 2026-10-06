@@ -11,9 +11,10 @@ displaymonitor/
   display.py    USB display driver: port discovery, init, diff → rectangles → blocks, flood recovery
   tray.py       pystray menu
   demo.py       invented snapshot for screenshots
+themes/         shipped theme presets (*.yaml) and their generated pictures (img/)
 config/         *.example.yaml (shipped) and your own config.yaml / pages.yaml (git‑ignored)
 scripts/        setup.ps1, install_autostart.ps1, uninstall_autostart.ps1
-tools/          bench / diagnostic scripts, make_montage.py
+tools/          bench / diagnostic scripts, make_montage.py, make_backgrounds.py (themes/img), make_gallery.py (docs/img/themes.png)
 docs/           CONFIGURATION.md, PROTOCOL.md, DEVELOPMENT.md, img/ (demo screenshots)
 ```
 
@@ -29,6 +30,8 @@ docs/           CONFIGURATION.md, PROTOCOL.md, DEVELOPMENT.md, img/ (demo screen
 
 ## Adding things
 
+* **A theme**: a YAML file in `themes/` (shipped) or `config/themes/` (yours), keys documented in [THEMING.md](THEMING.md); `resolve_theme()` in `render.py` merges
+  `DEFAULT_THEME` ← preset ← `config.yaml` `theme:`. Pictures: only ones you generated (see `tools/make_backgrounds.py`) or that are clearly free to redistribute.
 * **A new value on screen**: add it to `sensors.py` (poll function → `_set({...})`) and to `demo.py`, then use `"{your_key}"` in a page.
 * **A new page**: copy a page in `config/pages.yaml`; only `id` and `title` are mandatory. Add `alerts` if it should pop up by itself.
 * **A new card kind**: add `_card_<kind>(self, d, card, y, h, snap)` to `render.py`; `kind: <kind>` in YAML picks it up automatically.

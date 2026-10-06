@@ -27,8 +27,9 @@ If your own file is missing the example is used. Changes take effect after a res
 | `home_page` | first page | id of the recap page, shown at every start |
 | `stay_on_selected` | `true` | a page picked from the tray stays until *Back to recap* (else it returns after `peek_s`) |
 | `rotate_s` | `0` | `0` = no automatic rotation, `N` = seconds per page (also toggled from the tray) |
+| `layout.clock` | `true` | compact layout only: big time + date at the top-left of the ring |
 | `theme.scale` | `[50, 60, 100]` | colour thresholds, see below |
-| `theme.logos` | none | `[left.png, right.png]`, optional, relative to the project folder |
+| `theme.*` | | colours, **background picture**, logos, fonts, translucency, and `theme.preset` to load a saved look: everything is in **[THEMING.md](THEMING.md)** |
 | `network.interface` | `auto` | adapter name, or `auto` (the busiest adapter that has an IPv4 address, virtual ones excluded) |
 | `network.ping_host` | `1.1.1.1` | target of the ping shown on the network page |
 | `sensors.*_s` | 1 / 10 / 3 / 5 | polling period of the fast sensors, storage, processes, ping |
@@ -121,6 +122,7 @@ python -m displaymonitor                    run
 python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | page:<id> | brightness:<0-255>
 python -m displaymonitor --preview          PNGs with real sensors  -> docs/preview/
 python -m displaymonitor --demo             PNGs with invented data -> docs/img/
+python -m displaymonitor --demo --theme ember --compact     try a theme preset / the compact layout
 python -m displaymonitor --dump-sensors     print the sensor snapshot
 python -m displaymonitor --debug            verbose log (rectangles / bytes / ms per frame)
 python -m displaymonitor --no-tray          without the tray icon

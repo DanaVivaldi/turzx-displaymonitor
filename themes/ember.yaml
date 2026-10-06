@@ -1,0 +1,15 @@
+# Carbon fibre with orange accents.
+background: themes/img/carbon.jpg
+background_dim: 0.0
+panel_opacity: 0.82
+ring_backdrop: 0.30
+glow: false
+bg: "#0a0606"
+panel: "#1c1210"
+edge: "#a8501a"
+track: "#2a1a14"
+cyan: "#ff9a2e"
+cyan_dark: "#6a3410"
+white: "#fff1e6"
+dim: "#c9a58a"
+disc: ["#3a1006", "#7a2410", "#c04a14"]

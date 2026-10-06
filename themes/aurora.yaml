@@ -1,0 +1,14 @@
+# Northern lights, green accents.
+background: themes/img/aurora.jpg
+background_dim: 0.08
+panel_opacity: 0.70
+ring_backdrop: 0.35
+glow: false
+bg: "#030a16"
+panel: "#071a22"
+edge: "#2ad4a0"
+track: "#0c2a30"
+cyan: "#5affc0"
+cyan_dark: "#1a6a52"
+dim: "#9ad8c8"
+disc: ["#06303a", "#0a5a58", "#12a080"]

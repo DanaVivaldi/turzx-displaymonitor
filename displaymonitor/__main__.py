@@ -43,6 +43,8 @@ def main():
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--no-tray", action="store_true")
     ap.add_argument("--rotate", type=float, help="override rotate_s (seconds per page)")
+    ap.add_argument("--theme", metavar="NAME", help="use this theme preset (themes/NAME.yaml or config/themes/NAME.yaml)")
+    ap.add_argument("--compact", action="store_true", help="force the compact layout (no top bar), handy with --demo/--preview")
     ap.add_argument("--send", metavar="CMD", help="send a command to the running instance: quit, home, pin, rotate, next, prev, page:<id>, brightness:<n>")
     a = ap.parse_args()
     if a.send:
@@ -55,6 +57,10 @@ def main():
     cfg, pages = load_config(examples=a.demo)
     if a.rotate is not None:
         cfg["rotate_s"] = a.rotate
+    if a.theme:
+        cfg.setdefault("theme", {})["preset"] = a.theme
+    if a.compact:
+        cfg.setdefault("layout", {})["header"] = False
 
     if a.demo:                                    # render with invented data: no hardware, no display, no admin needed
         from .demo import demo_snapshot

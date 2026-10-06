@@ -1,0 +1,14 @@
+# Blueprint / HUD grid.
+background: themes/img/grid.jpg
+background_dim: 0.05
+panel_opacity: 0.80
+ring_backdrop: 0.25
+bg: "#040a1c"
+panel: "#071a33"
+edge: "#1aa7d8"
+track: "#0c2a4a"
+cyan: "#38e0ff"
+cyan_dark: "#0f5a7a"
+dim: "#86c4e0"
+disc: ["#082a40", "#0c4a6a", "#1286a8"]
+glow: false

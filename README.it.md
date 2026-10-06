@@ -21,7 +21,7 @@ per **Windows 10/11**. Sostituisce `UsbMonitor.exe` del produttore con un piccol
 Panoramica (sempre visibile) · CPU · GPU · Scheda madre · Dischi · Memoria · Rete · Sistema. Tutte hanno lo stesso schema:
 un anello a sinistra e fino a tre schede a destra. Un solo linguaggio di colori per **tutte** le temperature (°C) e percentuali (%):
 **bianco sotto 50, verde fino a 60, poi giallo → arancione → rosso fino a 100** (soglie modificabili).
-Le pagine sono semplici file YAML (`config/pages.yaml`). Se la CPU/GPU/RAM/dischi si scaldano troppo la pagina relativa compare da sola.
+Le pagine sono semplici file YAML (`config/pages.yaml`). **Grafica personalizzabile**: colori, immagine di sfondo, loghi, caratteri, schede trasparenti e un layout compatto con orologio grande; sono inclusi sei temi pronti (`theme: {preset: nebula}`) e puoi salvarne di tuoi in un file: [docs/THEMING.md](docs/THEMING.md) (in inglese). Non sono inclusi loghi né immagini di terzi (marchi / diritti d'autore). Se la CPU/GPU/RAM/dischi si scaldano troppo la pagina relativa compare da sola.
 
 ## Installazione
 

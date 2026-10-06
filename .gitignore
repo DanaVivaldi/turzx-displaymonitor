@@ -1,6 +1,7 @@
 # --- your own settings (the *.example.yaml files are the shipped defaults)
 config/config.yaml
 config/pages.yaml
+config/themes/
 
 # --- runtime state
 logs/

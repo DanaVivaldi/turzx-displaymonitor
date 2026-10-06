@@ -1,0 +1,14 @@
+# Purple-to-orange sunset, pink accents.
+background: themes/img/sunset.jpg
+background_dim: 0.12
+panel_opacity: 0.62
+ring_backdrop: 0.40
+glow: false
+bg: "#10062a"
+panel: "#1a0c2e"
+edge: "#d8508a"
+track: "#2c1640"
+cyan: "#ff7ab0"
+cyan_dark: "#7a2a58"
+dim: "#e0b0d0"
+disc: ["#4a0f4a", "#8a1a60", "#e04a70"]

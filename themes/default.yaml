@@ -1,0 +1,14 @@
+# The built-in look (dark blue, cyan accents). Copy this file to config/themes/mytheme.yaml and edit it;
+# every key is optional. Full reference: docs/THEMING.md
+bg: "#060a28"          # base colour (also what pictures are dimmed towards)
+panel: "#0c184a"       # card background
+edge: "#0c549c"        # card outline, corner brackets
+track: "#102460"       # empty part of bars and rings
+cyan: "#2fd0ff"        # accent: legend square, active page dot, default arcs
+cyan_dark: "#0e4678"
+white: "#f0f8ff"       # main text
+dim: "#7fa4d6"         # secondary text
+heat: ["#2fd0ff", "#40e060", "#ffd600", "#ff8a00", "#f02430"]   # level colours, low -> high
+glow: true
+glow_color: "#142878"
+disc: ["#2e0c50", "#581068", "#82167c"]   # the centre disc of the ring, outside -> inside

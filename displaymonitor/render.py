@@ -5,29 +5,93 @@ Two variants (config `layout.header`): with a top bar (logos / title / clock), o
 cards stretched over the full height, logos at the ring's lower corners).
 Everything is drawn at 3x and downsampled for smooth edges.
 """
+import logging
 import os
 import string
 
+import yaml
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+log = logging.getLogger(__name__)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 S = 3
 W, H = 480, 320
 CARD_X0, CARD_X1, CARD_IN0, CARD_IN1 = 236, 468, 248, 458
 
+# Everything below can be overridden in config.yaml `theme:` or in a preset file (themes/NAME.yaml, see docs/THEMING.md).
 DEFAULT_THEME = {
+    # colours: "#RRGGBB" or [r, g, b]
     "bg": (6, 10, 40), "panel": (12, 24, 74), "edge": (12, 84, 156), "track": (16, 36, 96),
     "cyan": (47, 208, 255), "cyan_dark": (14, 70, 120), "blue": (40, 110, 230),
     "magenta": (232, 40, 128), "amber": (255, 176, 32),
     "white": (240, 248, 255), "dim": (127, 164, 214),
-    # level colours, low -> high: azzurro, verde, giallo, arancione, rosso
+    # level colours, low -> high (default: cyan, green, yellow, orange, red)
     "heat": [(47, 208, 255), (64, 224, 96), (255, 214, 0), (255, 138, 0), (240, 36, 48)],
     # thresholds shared by temperatures (°C) and utilisation (%): white below the 1st, green up to the 2nd,
     # then yellow -> orange -> red reaching red at the 3rd
     "scale": (50, 60, 100),
     "logos": (),                      # optional [left_logo.png, right_logo.png]; none shipped (trademarks)
+    # background picture (optional): any image; fitted to the 480x320 screen
+    "background": None,               # path relative to the project folder (or absolute)
+    "background_fit": "cover",        # cover (fill + crop) | contain (fit + bars) | stretch
+    "background_focus": (0.5, 0.5),   # which part of the image survives a "cover" crop (x, y in 0..1)
+    "background_dim": 0.0,            # 0..1: how much the picture is pushed towards `bg` (keeps text readable)
+    "background_blur": 0.0,           # px
+    "panel_opacity": 1.0,             # cards: 1 = solid, lower = the background shows through
+    "ring_backdrop": 0.0,             # 0..1: dark translucent disc behind the ring
+    "text_shadow": False,             # dark drop shadow behind every text (helps on bright / busy pictures)
+    "glow": True,                     # soft glow behind the ring
+    "glow_color": (20, 40, 120),
+    "disc": [(46, 12, 80), (88, 16, 104), (130, 22, 124)],   # the three rings of the centre disc, outside -> inside
+    # fonts: TrueType files. The default is Windows' Bahnschrift (variable font, real bold); others get a synthetic bold.
     "font": r"C:\Windows\Fonts\bahnschrift.ttf",
+    "font_bold": None,
 }
+COLOR_KEYS = ("bg", "panel", "edge", "track", "cyan", "cyan_dark", "blue", "magenta", "amber", "white", "dim", "glow_color")
+FONT_FALLBACKS = (r"C:\Windows\Fonts\bahnschrift.ttf", r"C:\Windows\Fonts\segoeui.ttf", r"C:\Windows\Fonts\arial.ttf")
+
+
+def to_rgb(v):
+    """'#RRGGBB' / '#RGB' / [r, g, b] -> (r, g, b)."""
+    if isinstance(v, str):
+        s = v.strip().lstrip("#")
+        if len(s) == 3:
+            s = "".join(c * 2 for c in s)
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    return tuple(int(x) for x in v[:3])
+
+
+def load_preset(name: str) -> dict:
+    """themes live in config/themes/NAME.yaml (yours, git-ignored) or themes/NAME.yaml (shipped)."""
+    for base in (os.path.join(ROOT, "config", "themes"), os.path.join(ROOT, "themes")):
+        path = os.path.join(base, f"{name}.yaml")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+    log.warning("theme preset '%s' not found (looked in config/themes and themes)", name)
+    return {}
+
+
+def resolve_theme(theme_cfg: dict | None) -> dict:
+    th = dict(DEFAULT_THEME)
+    cfg = dict(theme_cfg or {})
+    preset = cfg.pop("preset", None)
+    if preset:
+        th.update(load_preset(str(preset)))
+    th.update(cfg)                                    # explicit config.yaml values win over the preset
+    for k in COLOR_KEYS:
+        th[k] = to_rgb(th[k])
+    th["heat"] = [to_rgb(c) for c in th["heat"]]
+    th["disc"] = [to_rgb(c) for c in th["disc"]]
+    th["scale"] = tuple(th["scale"])
+    th["logos"] = tuple(th.get("logos") or ())
+    th["background_focus"] = tuple(th.get("background_focus") or (0.5, 0.5))
+    return th
+
+
+def project_path(p) -> str:
+    p = str(p)
+    return p if os.path.isabs(p) else os.path.join(ROOT, p)
 
 
 def sc(v):
@@ -73,13 +137,12 @@ def lerp(a, b, t):
 
 class Renderer:
     def __init__(self, theme_cfg: dict | None = None, layout_cfg: dict | None = None):
-        th = dict(DEFAULT_THEME)
-        for k, v in (theme_cfg or {}).items():
-            th[k] = tuple(v) if isinstance(v, list) else v
-        self.t = th
+        self.t = resolve_theme(theme_cfg)
         self._fonts = {}
+        self._font_path = self._find_font(self.t["font"])
         lc = layout_cfg or {}
         self.header = bool(lc.get("header", True))
+        self.clock = bool(lc.get("clock", True))        # compact layout: date + time at the top-left of the ring
         self.logo_h = float(lc.get("logo_h", 22))
         self._k = 1.0                       # vertical stretch of the card being drawn (compact layout)
         if self.header:                     # title + clock bar on top, logos in the top corners
@@ -91,18 +154,33 @@ class Renderer:
         self._bg = self._build_background()
 
     # -- helpers --------------------------------------------------------------------------------
+    @staticmethod
+    def _find_font(path) -> str:
+        for cand in (path,) + FONT_FALLBACKS:
+            if cand and os.path.exists(project_path(cand)):
+                return project_path(cand)
+        raise FileNotFoundError("no usable font: set theme.font to a .ttf file")
+
     def font(self, px, bold=False):
         key = (px, bold)
-        f = self._fonts.get(key)
-        if f is None:
-            f = ImageFont.truetype(self.t["font"], sc(px))
-            if bold:
-                try:
-                    f.set_variation_by_name("Bold")      # Bahnschrift is a variable font
-                except Exception:  # noqa: BLE001
-                    pass
-            self._fonts[key] = f
-        return f
+        entry = self._fonts.get(key)
+        if entry is None:
+            faux = False
+            if bold and self.t.get("font_bold") and os.path.exists(project_path(self.t["font_bold"])):
+                f = ImageFont.truetype(project_path(self.t["font_bold"]), sc(px))
+            else:
+                f = ImageFont.truetype(self._font_path, sc(px))
+                if bold:
+                    try:
+                        f.set_variation_by_name("Bold")      # variable fonts (Bahnschrift) have a real bold
+                    except Exception:  # noqa: BLE001
+                        faux = True                           # static fonts: thicken with a thin stroke
+            entry = self._fonts[key] = (f, faux)
+        return entry[0]
+
+    def _faux_bold(self, px, bold) -> bool:
+        self.font(px, bold)
+        return self._fonts[(px, bold)][1]
 
     def color(self, name_or_rgb, default=None):
         if isinstance(name_or_rgb, (list, tuple)):
@@ -161,23 +239,69 @@ class Renderer:
         return fmt(spec, snap), default_color
 
     def draw_text(self, d, x, y, s, px, fill, anchor="la", bold=False):
-        d.text((sc(x), sc(y)), s, font=self.font(px, bold), fill=fill, anchor=anchor)
+        stroke = sc(px * 0.035) if bold and self._faux_bold(px, bold) else 0
+        font = self.font(px, bold)
+        if self.t.get("text_shadow"):                     # dark drop shadow: keeps small text readable on busy pictures
+            off = sc(0.9)
+            d.text((sc(x) + off, sc(y) + off), s, font=font, fill=(0, 0, 0), anchor=anchor, stroke_width=stroke, stroke_fill=(0, 0, 0))
+        d.text((sc(x), sc(y)), s, font=font, fill=fill, anchor=anchor, stroke_width=stroke, stroke_fill=fill)
 
     def text_w(self, s, px):
         return self.font(px).getlength(s) / S
 
     # -- static background (built once) ---------------------------------------------------------
+    def _background_picture(self):
+        """The optional theme.background picture, fitted to the 3x canvas, blurred and dimmed; None if unusable."""
+        t = self.t
+        if not t.get("background"):
+            return None
+        try:
+            im = Image.open(project_path(t["background"])).convert("RGB")
+        except OSError as e:
+            log.warning("cannot open background %s: %s", t["background"], e)
+            return None
+        tw, th = W * S, H * S
+        fit = str(t.get("background_fit", "cover")).lower()
+        fx, fy = t["background_focus"]
+        if fit == "stretch":
+            im = im.resize((tw, th), Image.LANCZOS)
+        elif fit == "contain":
+            k = min(tw / im.width, th / im.height)
+            im = im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))), Image.LANCZOS)
+            canvas = Image.new("RGB", (tw, th), t["bg"])
+            canvas.paste(im, ((tw - im.width) // 2, (th - im.height) // 2))
+            im = canvas
+        else:                                           # cover: fill the screen, crop what does not fit
+            k = max(tw / im.width, th / im.height)
+            nw, nh = max(tw, int(round(im.width * k))), max(th, int(round(im.height * k)))
+            im = im.resize((nw, nh), Image.LANCZOS)
+            left, top = int((nw - tw) * min(1, max(0, fx))), int((nh - th) * min(1, max(0, fy)))
+            im = im.crop((left, top, left + tw, top + th))
+        if t.get("background_blur"):
+            im = im.filter(ImageFilter.GaussianBlur(sc(float(t["background_blur"]))))
+        dim = float(t.get("background_dim") or 0.0)
+        if dim > 0:
+            im = Image.blend(im, Image.new("RGB", im.size, t["bg"]), min(1.0, dim))
+        return im
+
     def _build_background(self):
         t = self.t
-        img = Image.new("RGB", (W * S, H * S), t["bg"])
+        img = self._background_picture() or Image.new("RGB", (W * S, H * S), t["bg"])
         cx, cy = self.ring_c
         rs = self.rs
-        glow = Image.new("RGB", img.size, (0, 0, 0))
-        g = 120 * rs
-        glow_box = box(8, 60, 228, 300) if self.header else box(cx - g, cy - g, cx + g, cy + g)
-        ImageDraw.Draw(glow).ellipse(glow_box, fill=(20, 40, 120))
-        glow = glow.filter(ImageFilter.GaussianBlur(sc(40)))
-        img = Image.blend(img, Image.composite(glow, img, glow.convert("L")), 0.55)
+        if t.get("glow", True):
+            glow = Image.new("RGB", img.size, (0, 0, 0))
+            g = 120 * rs
+            glow_box = box(8, 60, 228, 300) if self.header else box(cx - g, cy - g, cx + g, cy + g)
+            ImageDraw.Draw(glow).ellipse(glow_box, fill=t["glow_color"])
+            glow = glow.filter(ImageFilter.GaussianBlur(sc(40)))
+            img = Image.blend(img, Image.composite(glow, img, glow.convert("L")), 0.55)
+        if float(t.get("ring_backdrop") or 0) > 0:      # dark translucent disc behind the ring (readability on photos)
+            ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            br = 92 * rs + 10 * rs
+            ImageDraw.Draw(ov).ellipse(box(cx - br, cy - br, cx + br, cy + br),
+                                       fill=(*t["bg"], int(255 * min(1.0, float(t["ring_backdrop"])))))
+            img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
         d = ImageDraw.Draw(img)
         for (x, y, dx, dy) in ((4, 4, 1, 1), (W - 4, 4, -1, 1), (4, H - 4, 1, -1), (W - 4, H - 4, -1, -1)):
             d.line([sc(x), sc(y + 22 * dy), sc(x), sc(y), sc(x + 22 * dx), sc(y)], fill=t["edge"], width=sc(1.5))
@@ -204,7 +328,7 @@ class Renderer:
         # core disc with magenta glow (static)
         disc = Image.new("RGB", img.size, (0, 0, 0))
         dd = ImageDraw.Draw(disc)
-        for r, c in ((52, (46, 12, 80)), (41, (88, 16, 104)), (28, (130, 22, 124))):
+        for r, c in zip((52, 41, 28), t["disc"]):
             r *= rs
             dd.ellipse(box(cx - r, cy - r, cx + r, cy + r), fill=c)
         disc = disc.filter(ImageFilter.GaussianBlur(sc(8 * rs)))
@@ -218,14 +342,6 @@ class Renderer:
     def render(self, page: dict, snap: dict, index: int, total: int) -> Image.Image:
         t = self.t
         img = self._bg.copy()
-        d = ImageDraw.Draw(img)
-        if self.header:
-            self.draw_text(d, W / 2, 20, str(page.get("title", "")), 15, t["white"], "mm")
-            self.draw_text(d, W / 2, 36, f"{snap.get('date', '')}  ·  {snap.get('time', '')}", 11, t["dim"], "mm")
-        if page.get("ring"):
-            self._ring(d, page["ring"], snap)
-            if page["ring"].get("legend"):
-                self._legend(d, page["ring"]["legend"], y=self.legend_y)
         cards = page.get("cards", [])
         hs = [c.get("h", 70) for c in cards]
         gap, k = 8.0, 1.0
@@ -234,11 +350,38 @@ class Renderer:
             k = max(1.0, min(1.3, avail / sum(hs)))
             if len(cards) > 1:
                 gap += min(6.0, max(0.0, avail - k * sum(hs)) / (len(cards) - 1))
-        y = self.cards_top
+        geo, y = [], self.cards_top
         for card, h in zip(cards, hs):
-            self._k = k
-            self._card(d, card, y, h * k, snap)
+            geo.append((card, y, h * k))
             y += h * k + gap
+        # card panels first (they may be translucent, which needs an alpha composite)
+        opacity = max(0.0, min(1.0, float(t.get("panel_opacity", 1.0))))
+        if opacity < 1.0:
+            ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            od = ImageDraw.Draw(ov)
+            for _, cy0, ch in geo:
+                od.rounded_rectangle(box(CARD_X0, cy0, CARD_X1, cy0 + ch), radius=sc(8), fill=(*t["panel"], int(255 * opacity)),
+                                     outline=(*t["edge"], 255), width=sc(1))
+            img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+        d = ImageDraw.Draw(img)
+        if opacity >= 1.0:
+            for _, cy0, ch in geo:
+                d.rounded_rectangle(box(CARD_X0, cy0, CARD_X1, cy0 + ch), radius=sc(8), fill=t["panel"], outline=t["edge"], width=sc(1))
+        legend_x = 14
+        if self.header:
+            self.draw_text(d, W / 2, 20, str(page.get("title", "")), 15, t["white"], "mm")
+            self.draw_text(d, W / 2, 36, f"{snap.get('date', '')}  ·  {snap.get('time', '')}", 11, t["dim"], "mm")
+        elif self.clock:                      # compact layout: date + time above the ring's left side, legend to its right
+            self.draw_text(d, 14, 5, str(snap.get("time", "")), 30, t["white"], "la", bold=True)
+            self.draw_text(d, 15, 40, str(snap.get("date", "")), 13, t["dim"], "la", bold=True)
+            legend_x = 112
+        if page.get("ring"):
+            self._ring(d, page["ring"], snap)
+            if page["ring"].get("legend"):
+                self._legend(d, page["ring"]["legend"], x=legend_x, y=self.legend_y)
+        for card, cy0, ch in geo:
+            self._k = k
+            self._card(d, card, cy0, ch, snap)
         self._k = 1.0
         # page dots + counter
         for i in range(total):
@@ -325,8 +468,7 @@ class Renderer:
 
     # -- cards ----------------------------------------------------------------------------------
     def _card(self, d, card, y, h, snap):
-        t = self.t
-        d.rounded_rectangle(box(CARD_X0, y, CARD_X1, y + h), radius=sc(8), fill=t["panel"], outline=t["edge"], width=sc(1))
+        t = self.t                              # (the panel itself was already drawn by render())
         k, fk = self._k, min(self._k, 1.2)
         self.draw_text(d, CARD_IN0, y + 9 * k, fmt(card.get("title", ""), snap), 10.5 * fk, t["dim"])
         getattr(self, "_card_" + card.get("kind", "main"))(d, card, y, h, snap)
