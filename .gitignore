@@ -2,6 +2,7 @@
 config/config.yaml
 config/pages.yaml
 config/themes/
+config/state.yaml
 
 # --- runtime state
 logs/

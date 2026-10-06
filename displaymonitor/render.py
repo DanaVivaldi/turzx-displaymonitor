@@ -94,6 +94,34 @@ def project_path(p) -> str:
     return p if os.path.isabs(p) else os.path.join(ROOT, p)
 
 
+LOGO_DIR = os.path.join(ROOT, "assets", "logos")
+LOGO_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def list_logos() -> list[str]:
+    """Names (file name without extension) of the pictures in assets/logos/ : the logo library."""
+    try:
+        return sorted(os.path.splitext(f)[0] for f in os.listdir(LOGO_DIR) if f.lower().endswith(LOGO_EXTS))
+    except OSError:
+        return []
+
+
+def resolve_logo(spec) -> str | None:
+    """'amd' -> assets/logos/amd.png ; anything that looks like a path (assets/x.png, an absolute path) is used as is ;
+    'none' / '' -> None."""
+    s = str(spec).strip()
+    if not s or s.lower() in ("none", "null", "-"):
+        return None
+    if any(c in s for c in "/\\") or os.path.splitext(s)[1].lower() in LOGO_EXTS:
+        return project_path(s)
+    for ext in LOGO_EXTS:
+        p = os.path.join(LOGO_DIR, s + ext)
+        if os.path.exists(p):
+            return p
+    log.warning("logo '%s' not found in assets/logos/", s)
+    return None
+
+
 def sc(v):
     return int(round(v * S))
 
@@ -284,6 +312,11 @@ class Renderer:
             im = Image.blend(im, Image.new("RGB", im.size, t["bg"]), min(1.0, dim))
         return im
 
+    def set_logos(self, left, right):
+        """Change the two logos at run time (tray menu / --send logo:...): the static background is rebuilt."""
+        self.t["logos"] = (left, right)
+        self._bg = self._build_background()
+
     def _load_logo(self, spec):
         """A logo spec is an image path, or a text badge {text, color} (no image file needed). Returns an RGBA image
         `logo_h` px high (at 3x), or None."""
@@ -302,8 +335,11 @@ class Renderer:
             d.rounded_rectangle((0, 0, w - 1, h - 1), radius=int(h * 0.22), fill=(*self.t["bg"], 170), outline=(*col, 255), width=sc(1.3))
             d.text((w / 2, h / 2 + sc(0.3)), text, font=font, fill=col, anchor="mm")
             return im
+        path = resolve_logo(spec)
+        if not path:
+            return None
         try:
-            lg = Image.open(project_path(spec)).convert("RGBA")
+            lg = Image.open(path).convert("RGBA")
         except OSError as e:
             log.warning("cannot open logo %s: %s", spec, e)
             return None

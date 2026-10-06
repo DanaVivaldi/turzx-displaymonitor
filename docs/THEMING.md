@@ -88,28 +88,38 @@ glow: false
 
 ### Logos
 
-```yaml
-theme:
-  logos: [assets/left.png, assets/right.png]    # either may be omitted: [assets/left.png]
-layout:
-  logo_h: 22                                    # height in px; width follows the picture's aspect ratio
+The two logos sit at the lower corners of the ring (compact layout, the default) or in the top corners (with `layout.header: true`).
+They come from a **logo library**: every picture in `assets/logos/` is a logo, and its file name (without extension) is its name.
+That folder is git‑ignored and starts empty (see below why), so first add some:
+
+```powershell
+# a transparent PNG: just import it
+python tools\import_logo.py "C:\Users\me\Downloads\amd_logo.png" --name amd
+# a logo on a flat coloured background (JPG, screenshot...): make the background transparent
+python tools\import_logo.py asus_rog.jpg --name rog --remove-bg
+# a black logo on a transparent background: paint it white so it shows on the dark theme
+python tools\import_logo.py msi_black.png --name msi --white
 ```
 
-PNG with transparency works best. With the compact layout (`layout.header: false`, the default) the logos sit at the two lower corners of the ring;
-with the top bar (`header: true`) they sit in the top corners.
+The tool trims the empty margins and stores the result in `assets/logos/NAME.png`. (`--remove-bg` removes the colour found along the
+picture's border; give it a number to tune the tolerance, e.g. `--remove-bg 60` for gradients.)
 
-**No logos are shipped** — AMD, Intel, NVIDIA, ASUS ROG … are trademarks and cannot be redistributed in an MIT repository. Two easy ways to get yours:
+Then choose them, any of these ways:
 
-* **Download the official one** from the vendor's brand / press page, save it under `assets/` (that folder is git‑ignored) and point `logos:` at it,
-  e.g. `logos: [assets/amd.png, assets/asus_rog.png]`.
-* **Use a text badge** — no file needed, a rounded outline with your text and colour:
+| How | |
+|---|---|
+| **Tray icon** | *Left logo* / *Right logo* submenus list the library (plus *None*). The choice applies at once and is **remembered** (`config/state.yaml`). *Logos from config* goes back to what `config.yaml` says. New files appear in the menu without restarting |
+| `config.yaml` | `theme: {logos: [intel, rog]}` — names from the library; or a path (`assets/my.png`); `none` for no logo; one entry is fine: `[amd]` |
+| Command line | `python -m displaymonitor --send logo:left:amd`, `--send logo:right:none`, `--send logo:reset` |
 
-  ```yaml
-  theme:
-    logos: [{text: "AMD", color: "#ed1c24"}, {text: "RYZEN", color: "#f0f8ff"}]
-  ```
+```yaml
+layout:
+  logo_h: 26      # logo height in px (default 22); the width follows the picture
+```
 
-  ![Text badges](img/logo_badges.png)
+**No logos are shipped.** AMD, Intel, NVIDIA, ASUS ROG, MSI … are trademarks and cannot be redistributed in an MIT repository, so the library is yours to fill:
+download the logos the vendors publish for that purpose (brand / press kit pages) and import them with the tool above.
+(If you only want a word, `{text: "AMD", color: "#ed1c24"}` in `logos:` draws a plain outlined text badge, no file needed.)
 
 ### Fonts
 

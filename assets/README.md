@@ -1,13 +1,9 @@
 # Assets
 
-No images are shipped with the project: brand logos are trademarks and cannot be redistributed.
+Nothing is shipped here: brand logos are trademarks and third-party pictures are copyrighted. Everything in this folder except this file is git-ignored.
 
-If you want logos in the two top corners of every page, drop two PNG files here (transparent background works best,
-they are scaled to 22 px of height) and reference them in `config/config.yaml`:
+* `logos/` — **the logo library**. Every picture here can be picked as the left / right logo (tray menu, `config.yaml`, `--send logo:...`).
+  Add logos with `python tools/import_logo.py FILE --name NAME` (trims, removes a flat background, makes dark logos white).
+* `backgrounds/` — anything you want to use as a `theme.background` picture (see `docs/THEMING.md`).
 
-```yaml
-theme:
-  logos: [assets/my_left_logo.png, assets/my_right_logo.png]
-```
-
-Everything in this folder except this file is git-ignored.
+Full guide: [docs/THEMING.md](../docs/THEMING.md).

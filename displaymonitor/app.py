@@ -59,6 +59,25 @@ class App:
         self.alert_until = 0.0
         self._page_since = time.time()
         self.control_file = os.path.join(ROOT, "logs", "control.cmd")
+        self.state_file = os.path.join(ROOT, "config", "state.yaml")     # choices made from the tray that must survive a restart
+        self._config_logos = tuple(self.renderer.t["logos"])
+        self._load_state()
+
+    def _load_state(self):
+        try:
+            with open(self.state_file, encoding="utf-8") as f:
+                logos = (yaml.safe_load(f) or {}).get("logos")
+        except OSError:
+            return
+        if logos:
+            self.renderer.set_logos(*(list(logos) + [None, None])[:2])
+
+    def _save_state(self):
+        try:
+            with open(self.state_file, "w", encoding="utf-8") as f:
+                yaml.safe_dump({"logos": [x if isinstance(x, (str, dict)) else None for x in self.renderer.t["logos"]]}, f)
+        except OSError as e:
+            log.warning("cannot save %s: %s", self.state_file, e)
 
     # -- control --------------------------------------------------------------------------------
     def _show_page(self, i: int):
@@ -90,6 +109,18 @@ class App:
                     self._show_page(i)
                     if p["id"] == self.pages[self.home]["id"]:
                         self.pinned = False        # picking the home page is simply 'home'
+        elif cmd == "logo:reset":
+            self.renderer.set_logos(*(list(self._config_logos) + [None, None])[:2])
+            try:
+                os.remove(self.state_file)
+            except OSError:
+                pass
+        elif cmd.startswith("logo:"):
+            _, side, name = cmd.split(":", 2)           # logo:left:amd | logo:right:none
+            cur = list(self.renderer.t["logos"]) + [None, None]
+            cur[0 if side == "left" else 1] = None if name == "none" else name
+            self.renderer.set_logos(cur[0], cur[1])
+            self._save_state()
         elif cmd.startswith("brightness:"):
             self.display.set_brightness(int(cmd[11:]))
 

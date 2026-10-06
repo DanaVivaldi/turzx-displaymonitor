@@ -21,7 +21,7 @@ per **Windows 10/11**. Sostituisce `UsbMonitor.exe` del produttore con un piccol
 Panoramica (sempre visibile) · CPU · GPU · Scheda madre · Dischi · Memoria · Rete · Sistema. Tutte hanno lo stesso schema:
 un anello a sinistra e fino a tre schede a destra. Un solo linguaggio di colori per **tutte** le temperature (°C) e percentuali (%):
 **bianco sotto 50, verde fino a 60, poi giallo → arancione → rosso fino a 100** (soglie modificabili).
-Le pagine sono semplici file YAML (`config/pages.yaml`). **Grafica personalizzabile**: colori, immagine di sfondo, loghi, caratteri, schede trasparenti e un layout compatto con orologio grande; sono inclusi sei temi pronti (`theme: {preset: nebula}`) e puoi salvarne di tuoi in un file: [docs/THEMING.md](docs/THEMING.md) (in inglese). Non sono inclusi loghi né immagini di terzi (marchi / diritti d'autore). Se la CPU/GPU/RAM/dischi si scaldano troppo la pagina relativa compare da sola.
+Le pagine sono semplici file YAML (`config/pages.yaml`). **Grafica personalizzabile**: colori, immagine di sfondo, loghi, caratteri, schede trasparenti e un layout compatto con orologio grande; sono inclusi sei temi pronti (`theme: {preset: nebula}`) e puoi salvarne di tuoi in un file: [docs/THEMING.md](docs/THEMING.md) (in inglese). I due loghi in basso vengono da una libreria (`assets/logos/`): importa un logo con `tools/import_logo.py` e scegli dal menu della tray *Logo a sinistra / a destra* (Intel ↔ AMD, ASUS ROG ↔ MSI …). Non sono inclusi loghi né immagini di terzi (marchi / diritti d'autore). Se la CPU/GPU/RAM/dischi si scaldano troppo la pagina relativa compare da sola.
 
 ## Installazione
 
@@ -39,7 +39,7 @@ Se lo schermo è montato al contrario: `display.rotate: 3` in `config/config.yam
 
 ## Uso
 
-* **Icona nella tray**: *Mostra pagina* (resta finché non torni al riepilogo), *Torna al riepilogo*, *Rotazione automatica*, *Luminosità*, *Esci*.
+* **Icona nella tray**: *Mostra pagina* (resta finché non torni al riepilogo), *Torna al riepilogo*, *Logo a sinistra / a destra*, *Rotazione automatica*, *Luminosità*, *Esci*.
 * **Riga di comando** (parla con l'istanza in esecuzione): `python -m displaymonitor --send quit` (chiusura pulita: usala sempre al posto di terminare il processo),
   `--send page:gpu`, `home`, `next`, `prev`, `rotate`, `brightness:150`.
 * `--preview` (anteprima PNG con i sensori reali), `--dump-sensors`, `--demo` (dati inventati), `--debug`.

@@ -32,7 +32,7 @@ rotate_s: 0            # 0 = no automatic rotation; N = seconds per page (can al
 
 theme:
   # preset: nebula       # a look saved as themes/NAME.yaml (shipped) or config/themes/NAME.yaml (yours): default | nebula | grid | ember | sunset | aurora
-  # logos: [assets/left.png, {text: "AMD", color: "#ed1c24"}]   # optional: image files and/or text badges (no logos are shipped)
+  # logos: [intel, rog]    # names from the logo library assets/logos/ (or paths); also switchable from the tray. No logos are shipped: tools/import_logo.py
   # background: assets/backgrounds/mypicture.jpg # optional background picture; see docs/THEMING.md for dim / blur / panel_opacity ...
   # Any colour can be overridden here too, e.g.:  cyan: "#ff66cc"
   # Colour thresholds, the same for temperatures (°C) and utilisation (%):
