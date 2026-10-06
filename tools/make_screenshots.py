@@ -4,9 +4,9 @@
   * the grid of all pages     -> docs/img/all_pages.png   (the picture at the top of the README)
   * the theme gallery         -> docs/img/themes.png
 
-Each screenshot uses a different pair of logos from your logo library (assets/logos/, see docs/THEMING.md) to show that the two
-bottom logos can be swapped. Logos that are not in the library are simply left out. The repository ships no logo files: the
-screenshots show a few vendor logos only to illustrate the feature (the marks belong to their owners).
+Each screenshot uses a different pair of logos to show that the two bottom logos can be swapped. ONLY the shipped, public-domain
+library (logos/, see logos/LOGOS.md) is used, never your own assets/logos/, so the published images contain nothing else.
+The marks still belong to their owners (nominative use, see THIRD_PARTY_NOTICES.md).
 
     python tools/make_screenshots.py
 """
@@ -20,16 +20,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from displaymonitor.app import load_config  # noqa: E402
 from displaymonitor.demo import demo_snapshot  # noqa: E402
+from displaymonitor import render as render_mod  # noqa: E402
 from displaymonitor.render import Renderer  # noqa: E402
+
+render_mod.SHIPPED_ONLY = True          # ignore assets/logos: the screenshots may only show the shipped public-domain logos
 
 # (left logo, right logo) per page / per theme: an arbitrary mix of vendors, on purpose
 PAGE_LOGOS = {
-    "overview": ("intel", "rog"), "cpu": ("amd", "rog"), "gpu": ("intel", "msi"), "motherboard": ("amd", "aorus"),
-    "disks": ("intel", "nzxt"), "memory": ("amd", "msi"), "network": ("intel", "aorus"), "system": ("amd", "rog"),
+    "overview": ("intel", "asus"), "cpu": ("ryzen", "msi"), "gpu": ("geforce", "gigabyte"), "motherboard": ("amd", "asrock"),
+    "disks": ("intel-core", "rog-classic"), "memory": ("radeon", "zotac"), "network": ("nvidia", "nzxt"), "system": ("intel-arc", "evga"),
 }
 THEME_LOGOS = {
-    "aurora": ("amd", "msi"), "default": ("intel", "rog"), "ember": ("intel", "aorus"),
-    "grid": ("amd", "nzxt"), "nebula": ("intel", "msi"), "sunset": ("amd", "rog"),
+    "aurora": ("ryzen", "msi"), "default": ("intel", "asus"), "ember": ("intel-core", "gigabyte"),
+    "grid": ("amd", "corsair"), "nebula": ("geforce", "msi"), "sunset": ("radeon", "asrock"),
 }
 
 

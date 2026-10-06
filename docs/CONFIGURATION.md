@@ -57,6 +57,7 @@ Bars use the same scheme. Rings and the thread squares use a "level spectrum" (c
 pages:
   - id: overview            # used by home_page, alerts, --send page:<id>
     title: OVERVIEW         # shown at the top and in the tray
+    logos: [geforce, gigabyte]   # optional: this page's own two logos (library names); otherwise theme.logos
     ring: { ... }           # the left part (optional)
     cards: [ ... ]          # up to three cards on the right
 ```

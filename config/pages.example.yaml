@@ -105,6 +105,7 @@ pages:
   # ------------------------------------------------------------------------------------------
   - id: gpu
     title: GPU
+    # logos: [geforce, gigabyte]   # optional: this page's own two logos (names from the logo library); other pages use theme.logos
     ring:
       arcs:
         - {value: gpu_load, min: 0, max: 100, color: heat, radius: 90, width: 11}

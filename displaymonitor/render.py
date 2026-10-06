@@ -94,24 +94,42 @@ def project_path(p) -> str:
     return p if os.path.isabs(p) else os.path.join(ROOT, p)
 
 
-LOGO_DIR = os.path.join(ROOT, "assets", "logos")
+LOGO_DIR = os.path.join(ROOT, "assets", "logos")           # your own logos (git-ignored): they win over the shipped ones
+SHIPPED_LOGO_DIR = os.path.join(ROOT, "logos")              # the shipped library (public-domain logos, see logos/LOGOS.md)
+SHIPPED_ONLY = False                                         # tools/make_screenshots.py sets it: ignore your own logos
 LOGO_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 
 
+def _logo_dirs() -> list[str]:
+    return [SHIPPED_LOGO_DIR] if SHIPPED_ONLY else [LOGO_DIR, SHIPPED_LOGO_DIR]
+
+
 def list_logos() -> list[str]:
-    """Names (file name without extension) of the pictures in assets/logos/ : the logo library."""
-    try:
-        return sorted(os.path.splitext(f)[0] for f in os.listdir(LOGO_DIR) if f.lower().endswith(LOGO_EXTS))
-    except OSError:
-        return []
+    """Names (file name without extension) of the logo library: assets/logos/ (yours) plus logos/ (shipped)."""
+    names = set()
+    for d in _logo_dirs():
+        try:
+            names |= {os.path.splitext(f)[0] for f in os.listdir(d) if f.lower().endswith(LOGO_EXTS)}
+        except OSError:
+            pass
+    return sorted(names)
 
 
 def resolve_logo(spec) -> str | None:
-    """'amd' -> assets/logos/amd.png ; anything that looks like a path (assets/x.png, an absolute path) is used as is ;
-    'none' / '' -> None."""
+    """'amd' -> assets/logos/amd.png, else logos/amd.png ; anything that looks like a path (assets/x.png, an absolute path)
+    is used as is ; 'none' / '' -> None."""
     s = str(spec).strip()
     if not s or s.lower() in ("none", "null", "-"):
         return None
+    if any(c in s for c in "/\\") or os.path.splitext(s)[1].lower() in LOGO_EXTS:
+        return project_path(s)
+    for d in _logo_dirs():
+        for ext in LOGO_EXTS:
+            p = os.path.join(d, s + ext)
+            if os.path.exists(p):
+                return p
+    log.warning("logo '%s' not found in assets/logos/ or logos/", s)
+    return None
     if any(c in s for c in "/\\") or os.path.splitext(s)[1].lower() in LOGO_EXTS:
         return project_path(s)
     for ext in LOGO_EXTS:
@@ -180,7 +198,8 @@ class Renderer:
         else:                               # compact: no header; bigger ring, stretched cards, logos at the ring's lower corners
             self.ring_c, self.rs = (122, 182), float(lc.get("ring_scale", 1.15))
             self.cards_top, self.cards_bottom, self.legend_y, self.stretch = 10, 300, 8, True
-        self._bg = self._build_background()
+        self._bg_cache = {}
+        self._bg = self._background_for(None)
 
     # -- helpers --------------------------------------------------------------------------------
     @staticmethod
@@ -316,7 +335,8 @@ class Renderer:
     def set_logos(self, left, right):
         """Change the two logos at run time (tray menu / --send logo:...): the static background is rebuilt."""
         self.t["logos"] = (left, right)
-        self._bg = self._build_background()
+        self._bg_cache = {}
+        self._bg = self._background_for(None)
 
     def _load_logo(self, spec):
         """A logo spec is an image path, or a text badge {text, color} (no image file needed). Returns an RGBA image
@@ -347,7 +367,14 @@ class Renderer:
         k = min(self.logo_h / lg.height, self.logo_max_w / lg.width)        # fit both the height and the width budget
         return lg.resize((max(1, int(lg.width * k * S)), max(1, int(lg.height * k * S))), Image.LANCZOS)
 
-    def _build_background(self):
+    def _background_for(self, logos):
+        """Static background (picture, glow, brackets, logos). `logos` = a page's own pair, or None for the theme's pair; cached."""
+        key = tuple(str(x) if not isinstance(x, dict) else repr(sorted(x.items())) for x in logos) if logos else None
+        if key not in self._bg_cache:
+            self._bg_cache[key] = self._build_background(logos)
+        return self._bg_cache[key]
+
+    def _build_background(self, page_logos=None):
         t = self.t
         img = self._background_picture() or Image.new("RGB", (W * S, H * S), t["bg"])
         cx, cy = self.ring_c
@@ -372,7 +399,7 @@ class Renderer:
             d.line([sc(14), sc(44), sc(W - 14), sc(44)], fill=t["edge"], width=sc(1))
         # optional logos (theme.logos: [left, right], paths relative to the project folder; none are shipped).
         # With the header: top corners. Compact layout: the two lower corners of the ring's bounding box.
-        logos = list(t.get("logos") or ()) + [None, None]
+        logos = list(page_logos if page_logos else (t.get("logos") or ())) + [None, None]
         ring_r = 92 * rs
         if self.header:
             left_x, right_x, top_y = 14, W - 14, 9
@@ -399,7 +426,7 @@ class Renderer:
     # -- page -----------------------------------------------------------------------------------
     def render(self, page: dict, snap: dict, index: int, total: int) -> Image.Image:
         t = self.t
-        img = self._bg.copy()
+        img = self._background_for(page.get("logos")).copy()      # a page may carry its own two logos
         cards = page.get("cards", [])
         hs = [c.get("h", 70) for c in cards]
         gap, k = 8.0, 1.0

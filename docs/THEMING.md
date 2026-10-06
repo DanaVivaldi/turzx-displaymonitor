@@ -89,12 +89,35 @@ glow: false
 ### Logos
 
 The two logos sit at the lower corners of the ring (compact layout, the default) or in the top corners (with `layout.header: true`).
-They come from a **logo library**: every picture in `assets/logos/` is a logo, and its file name (without extension) is its name.
-That folder is git‑ignored and starts empty (see below why), so first add some:
+They come from the **logo library**, a name → picture lookup that merges two folders:
+
+| Folder | What | In Git? |
+|---|---|---|
+| `logos/` | the **shipped library**: 25 logos of CPU / GPU / motherboard / board-partner brands (Intel, AMD, Ryzen, Radeon, NVIDIA, GeForce, ASUS, MSI, GIGABYTE, ASRock, EVGA, ZOTAC, Sapphire, PowerColor, XFX, PNY, Palit, Inno3D, NZXT, Corsair, Cooler Master …) — all marked *public domain* on Wikimedia Commons; sources and licences in [`logos/LOGOS.md`](../logos/LOGOS.md) | yes |
+| `assets/logos/` | **your own** logos (anything: AORUS, the current ROG eye, a club badge …). A file here **wins** over a shipped one with the same name | no (git‑ignored) |
+
+The file name without extension is the logo's name: `amd`, `geforce`, `msi` …
+
+Choose them, any of these ways:
+
+| How | |
+|---|---|
+| **Tray icon** | *Left logo* / *Right logo* submenus list the library (plus *None*). The choice applies at once and is **remembered** (`config/state.yaml`). *Logos from config* goes back to what `config.yaml` says. Files you add show up without restarting |
+| `config.yaml` | `theme: {logos: [intel, asus]}` — names from the library, or a path (`assets/my.png`), or `none`; one entry is fine: `[amd]` |
+| **A single page** | give a page its own pair in `pages.yaml`: `- id: gpu` / `logos: [geforce, gigabyte]` (a GeForce card from Gigabyte). Other pages keep the theme's pair |
+| Command line | `python -m displaymonitor --send logo:left:amd`, `--send logo:right:none`, `--send logo:reset` |
+
+```yaml
+layout:
+  logo_h: 26      # logo height in px (default 22); the width follows the picture
+  logo_max_w: 46  # ...but never wider than this: wide logos shrink to fit the corner
+```
+
+#### Adding a logo that is not in the library
 
 ```powershell
 # a transparent PNG: just import it
-python tools\import_logo.py "C:\Users\me\Downloads\amd_logo.png" --name amd
+python tools\import_logo.py "C:\Users\me\Downloads\aorus.png" --name aorus
 # a logo on a flat coloured background (JPG, screenshot...): make the background transparent
 python tools\import_logo.py asus_rog.jpg --name rog --remove-bg
 # a black logo on a transparent background: paint it white so it shows on the dark theme
@@ -104,23 +127,15 @@ python tools\import_logo.py msi_black.png --name msi --white
 The tool trims the empty margins and stores the result in `assets/logos/NAME.png`. (`--remove-bg` removes the colour found along the
 picture's border; give it a number to tune the tolerance, e.g. `--remove-bg 60` for gradients.)
 
-Then choose them, any of these ways:
+#### Copyright and trademarks — read this before you add or share logos
 
-| How | |
-|---|---|
-| **Tray icon** | *Left logo* / *Right logo* submenus list the library (plus *None*). The choice applies at once and is **remembered** (`config/state.yaml`). *Logos from config* goes back to what `config.yaml` says. New files appear in the menu without restarting |
-| `config.yaml` | `theme: {logos: [intel, rog]}` — names from the library; or a path (`assets/my.png`); `none` for no logo; one entry is fine: `[amd]` |
-| Command line | `python -m displaymonitor --send logo:left:amd`, `--send logo:right:none`, `--send logo:reset` |
-
-```yaml
-layout:
-  logo_h: 26      # logo height in px (default 22); the width follows the picture
-  logo_max_w: 46  # ...but never wider than this: wide logos shrink to fit the corner
-```
-
-**No logos are shipped.** AMD, Intel, NVIDIA, ASUS ROG, MSI … are trademarks and cannot be redistributed in an MIT repository, so the library is yours to fill:
-download the logos the vendors publish for that purpose (brand / press kit pages) and import them with the tool above.
-(If you only want a word, `{text: "AMD", color: "#ed1c24"}` in `logos:` draws a plain outlined text badge, no file needed.)
+* The shipped files are **not protected by copyright** according to Wikimedia Commons (typically simple text/geometric logos below the threshold of
+  originality) — `tools/fetch_logos.py` refuses to add anything that is not *Public domain* / CC0.
+* They are still **registered trademarks** of their owners. They are included only so you can identify the hardware you own; do not use
+  them to suggest endorsement. This project is not affiliated with any of the companies.
+* Logos with a clearly non‑free status (AORUS, the current ROG "eye", artwork inside vendor themes …) are **not** shipped: keep them in your own
+  `assets/logos/`, which is git‑ignored.
+* Colours: dark logos were made white for the dark UI (marked in `logos/LOGOS.md`); the originals are on the linked Commons pages.
 
 ### Fonts
 
