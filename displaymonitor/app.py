@@ -44,7 +44,7 @@ class App:
         self.pages = pages_cfg["pages"]
         self.sensors = Sensors(cfg)
         self.display = Display(cfg.get("display", {}))
-        self.renderer = Renderer(cfg.get("theme"))
+        self.renderer = Renderer(cfg.get("theme"), cfg.get("layout"))
         self.commands: "queue.Queue[str]" = queue.Queue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<n>
         ids = [p["id"] for p in self.pages]
         self.home = ids.index(cfg.get("home_page", ids[0])) if cfg.get("home_page", ids[0]) in ids else 0

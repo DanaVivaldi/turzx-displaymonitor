@@ -4,8 +4,14 @@
 
 language: en           # language of dates and of the tray menu (en | it)
 
+layout:
+  header: true         # true = top bar with title, date/time and (optional) logos.
+                       # false = compact: no top bar, bigger ring, taller cards, logos at the ring's lower corners.
+  logo_h: 22           # logo height in px
+  # ring_scale: 1.15   # compact layout only: size of the ring relative to the default
+
 display:
-  rotate: 1            # SOFTWARE rotation of the frame (np.rot90 steps): 1 or 3, depending on how the screen is mounted.
+  rotate: 1           # SOFTWARE rotation of the frame (np.rot90 steps): 1 or 3, depending on how the screen is mounted.
                        # The panel itself is always kept in portrait: the firmware's own rotation is unreliable.
   max_block_px: 12800  # every bitmap command stays below this many pixels (the firmware's DMA limit)
   flood_bytes: 2200000 # after an abnormal exit / link error: zero bytes that complete a half-sent bitmap (~13 s)

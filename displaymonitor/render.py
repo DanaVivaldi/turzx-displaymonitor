@@ -1,7 +1,9 @@
 """Page renderer: turns a page description (config/pages.yaml) + a sensor snapshot into a 480x320 image.
 
-Layout (same for every page): top bar with logos / title / clock, a ring on the left, up to three
-cards on the right, page dots at the bottom. Everything is drawn at 3x and downsampled for smooth edges.
+Layout (same for every page): a ring on the left, up to three cards on the right, page dots at the bottom.
+Two variants (config `layout.header`): with a top bar (logos / title / clock), or compact (no bar: bigger ring,
+cards stretched over the full height, logos at the ring's lower corners).
+Everything is drawn at 3x and downsampled for smooth edges.
 """
 import os
 import string
@@ -11,7 +13,6 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 S = 3
 W, H = 480, 320
-RING_C = (118, 200)      # moved down to leave room for the legend above the ring (bottom edge at y=292)
 CARD_X0, CARD_X1, CARD_IN0, CARD_IN1 = 236, 468, 248, 458
 
 DEFAULT_THEME = {
@@ -71,12 +72,22 @@ def lerp(a, b, t):
 
 
 class Renderer:
-    def __init__(self, theme_cfg: dict | None = None):
+    def __init__(self, theme_cfg: dict | None = None, layout_cfg: dict | None = None):
         th = dict(DEFAULT_THEME)
         for k, v in (theme_cfg or {}).items():
             th[k] = tuple(v) if isinstance(v, list) else v
         self.t = th
         self._fonts = {}
+        lc = layout_cfg or {}
+        self.header = bool(lc.get("header", True))
+        self.logo_h = float(lc.get("logo_h", 22))
+        self._k = 1.0                       # vertical stretch of the card being drawn (compact layout)
+        if self.header:                     # title + clock bar on top, logos in the top corners
+            self.ring_c, self.rs = (118, 200), 1.0
+            self.cards_top, self.cards_bottom, self.legend_y, self.stretch = 54, 300, 50, False
+        else:                               # compact: no header; bigger ring, stretched cards, logos at the ring's lower corners
+            self.ring_c, self.rs = (122, 182), float(lc.get("ring_scale", 1.15))
+            self.cards_top, self.cards_bottom, self.legend_y, self.stretch = 10, 300, 8, True
         self._bg = self._build_background()
 
     # -- helpers --------------------------------------------------------------------------------
@@ -159,35 +170,47 @@ class Renderer:
     def _build_background(self):
         t = self.t
         img = Image.new("RGB", (W * S, H * S), t["bg"])
+        cx, cy = self.ring_c
+        rs = self.rs
         glow = Image.new("RGB", img.size, (0, 0, 0))
-        ImageDraw.Draw(glow).ellipse(box(8, 60, 228, 300), fill=(20, 40, 120))
+        g = 120 * rs
+        glow_box = box(8, 60, 228, 300) if self.header else box(cx - g, cy - g, cx + g, cy + g)
+        ImageDraw.Draw(glow).ellipse(glow_box, fill=(20, 40, 120))
         glow = glow.filter(ImageFilter.GaussianBlur(sc(40)))
         img = Image.blend(img, Image.composite(glow, img, glow.convert("L")), 0.55)
         d = ImageDraw.Draw(img)
         for (x, y, dx, dy) in ((4, 4, 1, 1), (W - 4, 4, -1, 1), (4, H - 4, 1, -1), (W - 4, H - 4, -1, -1)):
             d.line([sc(x), sc(y + 22 * dy), sc(x), sc(y), sc(x + 22 * dx), sc(y)], fill=t["edge"], width=sc(1.5))
-        d.line([sc(14), sc(44), sc(W - 14), sc(44)], fill=t["edge"], width=sc(1))
-        # optional logos (theme.logos: [left, right], paths relative to the project folder; none are shipped)
+        if self.header:
+            d.line([sc(14), sc(44), sc(W - 14), sc(44)], fill=t["edge"], width=sc(1))
+        # optional logos (theme.logos: [left, right], paths relative to the project folder; none are shipped).
+        # With the header: top corners. Compact layout: the two lower corners of the ring's bounding box.
         logos = list(t.get("logos") or ()) + [None, None]
-        for name, x, right in ((logos[0], 14, False), (logos[1], W - 14, True)):
+        ring_r = 92 * rs
+        if self.header:
+            left_x, right_x, top_y = 14, W - 14, 9
+        else:
+            left_x, right_x, top_y = cx - ring_r, cx + ring_r, 298 - self.logo_h
+        for name, x, right in ((logos[0], left_x, False), (logos[1], right_x, True)):
             if not name:
                 continue
             try:
                 lg = Image.open(os.path.join(ROOT, str(name))).convert("RGBA")
             except OSError:
                 continue
-            k = 22 / lg.height
+            k = self.logo_h / lg.height
             lg = lg.resize((int(lg.width * k * S), int(lg.height * k * S)), Image.LANCZOS)
-            img.paste(lg, (sc(x) - (lg.width if right else 0), sc(9)), lg)
+            img.paste(lg, (sc(x) - (lg.width if right else 0), sc(top_y)), lg)
         # core disc with magenta glow (static)
-        cx, cy = RING_C
         disc = Image.new("RGB", img.size, (0, 0, 0))
         dd = ImageDraw.Draw(disc)
         for r, c in ((52, (46, 12, 80)), (41, (88, 16, 104)), (28, (130, 22, 124))):
+            r *= rs
             dd.ellipse(box(cx - r, cy - r, cx + r, cy + r), fill=c)
-        disc = disc.filter(ImageFilter.GaussianBlur(sc(8)))
+        disc = disc.filter(ImageFilter.GaussianBlur(sc(8 * rs)))
         m = Image.new("L", img.size, 0)
-        ImageDraw.Draw(m).ellipse(box(cx - 53, cy - 53, cx + 53, cy + 53), fill=255)
+        mr = 53 * rs
+        ImageDraw.Draw(m).ellipse(box(cx - mr, cy - mr, cx + mr, cy + mr), fill=255)
         img.paste(disc, (0, 0), m)
         return img
 
@@ -196,17 +219,27 @@ class Renderer:
         t = self.t
         img = self._bg.copy()
         d = ImageDraw.Draw(img)
-        self.draw_text(d, W / 2, 20, str(page.get("title", "")), 15, t["white"], "mm")
-        self.draw_text(d, W / 2, 36, f"{snap.get('date', '')}  ·  {snap.get('time', '')}", 11, t["dim"], "mm")
+        if self.header:
+            self.draw_text(d, W / 2, 20, str(page.get("title", "")), 15, t["white"], "mm")
+            self.draw_text(d, W / 2, 36, f"{snap.get('date', '')}  ·  {snap.get('time', '')}", 11, t["dim"], "mm")
         if page.get("ring"):
             self._ring(d, page["ring"], snap)
             if page["ring"].get("legend"):
-                self._legend(d, page["ring"]["legend"])
-        y = 54
-        for card in page.get("cards", []):
-            h = card.get("h", 70)
-            self._card(d, card, y, h, snap)
-            y += h + 8
+                self._legend(d, page["ring"]["legend"], y=self.legend_y)
+        cards = page.get("cards", [])
+        hs = [c.get("h", 70) for c in cards]
+        gap, k = 8.0, 1.0
+        if self.stretch and cards:            # compact layout: stretch the cards over the whole height
+            avail = self.cards_bottom - self.cards_top - gap * (len(cards) - 1)
+            k = max(1.0, min(1.3, avail / sum(hs)))
+            if len(cards) > 1:
+                gap += min(6.0, max(0.0, avail - k * sum(hs)) / (len(cards) - 1))
+        y = self.cards_top
+        for card, h in zip(cards, hs):
+            self._k = k
+            self._card(d, card, y, h * k, snap)
+            y += h * k + gap
+        self._k = 1.0
         # page dots + counter
         for i in range(total):
             x = W / 2 - total * 7 + i * 14 + 7
@@ -217,12 +250,13 @@ class Renderer:
     # -- ring -----------------------------------------------------------------------------------
     def _ring(self, d, ring, snap):
         t = self.t
-        cx, cy = RING_C
+        cx, cy = self.ring_c
+        rs = self.rs                          # ring scale: radii, widths, centre offsets and fonts
         vals = snap.get(ring["segments"]) if ring.get("segments") else None
         if vals is not None or ring.get("segments"):
             vals = vals or []
             n = len(vals) or ring.get("count", 12)
-            R, width = ring.get("radius", 92), ring.get("width", 11 if n <= 30 else 9)
+            R, width = ring.get("radius", 92) * rs, ring.get("width", 11 if n <= 30 else 9) * rs
             gap = 1.6 if n <= 30 else 1.0
             vmax = float(ring.get("seg_max", 100))
             for i in range(n):
@@ -242,7 +276,7 @@ class Renderer:
                     col = lerp(t["cyan_dark"], t["cyan"], (v / vmax) / ring.get("seg_sat", 0.45))
                 d.arc(box(cx - R, cy - R, cx + R, cy + R), a0, a1, fill=col, width=sc(width))
         for a in ring.get("arcs", []):
-            R, width = a.get("radius", 72), a.get("width", 5)
+            R, width = a.get("radius", 72) * rs, a.get("width", 5) * rs
             bb = box(cx - R, cy - R, cx + R, cy + R)
             d.arc(bb, 0, 360, fill=t["track"], width=sc(width))
             v = snap.get(a["value"])
@@ -258,16 +292,16 @@ class Renderer:
                 d.arc(bb, -90, -90 + 360 * frac, fill=col, width=sc(width))
         c = ring.get("center", {})
         if "label" in c:
-            self.draw_text(d, cx, cy - 32, fmt(c["label"], snap), 10.5, t["dim"], "mm")
+            self.draw_text(d, cx, cy - 32 * rs, fmt(c["label"], snap), 10.5 * rs, t["dim"], "mm")
         if "big" in c:
             s, col = self.text_of(c["big"], snap, t["white"])
-            self.draw_text(d, cx, cy - 9, s, c.get("big_px", 36 if len(s) <= 4 else 28), col, "mm")
+            self.draw_text(d, cx, cy - 9 * rs, s, c.get("big_px", 36 if len(s) <= 4 else 28) * rs, col, "mm")
         if "line1" in c:
             s, col = self.text_of(c["line1"], snap, t["cyan"])
-            self.draw_text(d, cx, cy + 16, s, 16, col, "mm")
+            self.draw_text(d, cx, cy + 16 * rs, s, 16 * rs, col, "mm")
         if "line2" in c:
             s, col = self.text_of(c["line2"], snap, t["dim"])
-            self.draw_text(d, cx, cy + 33, s, 9, col, "mm")
+            self.draw_text(d, cx, cy + 33 * rs, s, 9 * rs, col, "mm")
 
     def _legend(self, d, items, x=14, y=50, row_h=15):
         """Small key in the free top-left corner (outside the ring). `icon`: 'square' = the segment squares,
@@ -293,7 +327,8 @@ class Renderer:
     def _card(self, d, card, y, h, snap):
         t = self.t
         d.rounded_rectangle(box(CARD_X0, y, CARD_X1, y + h), radius=sc(8), fill=t["panel"], outline=t["edge"], width=sc(1))
-        self.draw_text(d, CARD_IN0, y + 9, fmt(card.get("title", ""), snap), 10.5, t["dim"])
+        k, fk = self._k, min(self._k, 1.2)
+        self.draw_text(d, CARD_IN0, y + 9 * k, fmt(card.get("title", ""), snap), 10.5 * fk, t["dim"])
         getattr(self, "_card_" + card.get("kind", "main"))(d, card, y, h, snap)
 
     def _bar(self, d, spec, x0, x1, y, snap, height=6):
@@ -314,55 +349,59 @@ class Renderer:
 
     def _card_main(self, d, card, y, h, snap):
         t = self.t
-        big_px = 30 if h >= 76 else 24
+        k, fk = self._k, min(self._k, 1.2)
+        tall = h / k >= 76                       # judged on the YAML height, not on the stretched one
+        big_px = (30 if tall else 24) * fk
         s = ""
         if "big" in card:
             s, col = self.text_of(card["big"], snap, t["white"])
-            self.draw_text(d, CARD_IN0, y + (20 if h >= 76 else 18), s, big_px, col)
+            self.draw_text(d, CARD_IN0, y + (20 if tall else 18) * k, s, big_px, col)
         if "mid" in card:
             ms, mcol = self.text_of(card["mid"], snap, t["cyan"])
-            self.draw_text(d, CARD_IN0 + self.text_w(s, big_px) + 14, y + (36 if h >= 76 else 33), ms, 18, mcol, "lm")
+            self.draw_text(d, CARD_IN0 + self.text_w(s, big_px) + 14, y + (36 if tall else 33) * k, ms, 18 * min(fk, 1.04), mcol, "lm")
         right = card.get("right", [])
         if len(right) == 1:
             rs, rc = self.text_of(right[0], snap, t["dim"])
-            self.draw_text(d, CARD_IN1, y + 35, rs, 11, rc, "rm")
+            self.draw_text(d, CARD_IN1, y + 35 * k, rs, 11 * fk, rc, "rm")
         elif len(right) >= 2:
             rs, rc = self.text_of(right[0], snap, t["dim"])
-            self.draw_text(d, CARD_IN1, y + 12, rs, 11, rc, "ra")
+            self.draw_text(d, CARD_IN1, y + 12 * k, rs, 11 * fk, rc, "ra")
             rs, rc = self.text_of(right[1], snap, t["dim"])
-            self.draw_text(d, CARD_IN1, y + 36, rs, 11, rc, "rm")
+            self.draw_text(d, CARD_IN1, y + 36 * k, rs, 11 * fk, rc, "rm")
         if "bar" in card:
-            self._bar(d, card["bar"], CARD_IN0, CARD_IN1, y + h - 16, snap)
+            self._bar(d, card["bar"], CARD_IN0, CARD_IN1, y + h - 16 * k, snap, height=6 * fk)
 
     def _card_stats(self, d, card, y, h, snap):
         t = self.t
+        k, fk = self._k, min(self._k, 1.2)
         items = card.get("items", [])
         n = max(len(items), 1)
         colw = (CARD_IN1 - CARD_IN0) / n
         texts = [self.text_of(it, snap, t["cyan"]) for it in items]
-        widest = max((self.text_w(s, 17) for s, _ in texts), default=1) or 1
-        vpx = max(10.0, min(17.0, 17.0 * (colw - 8) / widest))   # shrink values so columns never overlap
+        base = 17.0 * fk
+        widest = max((self.text_w(s, base) for s, _ in texts), default=1) or 1
+        vpx = max(10.0, min(base, base * (colw - 8) / widest))   # shrink values so columns never overlap
         for i, (it, (s, col)) in enumerate(zip(items, texts)):
             x = CARD_IN0 + i * colw
-            self.draw_text(d, x, y + 24, fmt(it.get("label", ""), snap), 11 if n <= 3 else 10, t["dim"])
-            self.draw_text(d, x, y + 38 + (17 - vpx) / 3, s, vpx, col)
+            self.draw_text(d, x, y + 24 * k, fmt(it.get("label", ""), snap), (11 if n <= 3 else 10) * fk, t["dim"])
+            self.draw_text(d, x, y + 38 * k + (base - vpx) / 3, s, vpx, col)
         foot = card.get("footer")
         if foot:
-            d.line([sc(CARD_IN0), sc(y + h - 20), sc(CARD_IN1 - 2), sc(y + h - 20)], fill=(24, 48, 110), width=sc(1))
-            fy = y + h - 10
+            d.line([sc(CARD_IN0), sc(y + h - 20 * k), sc(CARD_IN1 - 2), sc(y + h - 20 * k)], fill=(24, 48, 110), width=sc(1))
+            fy = y + h - 10 * k
             for side in ("left", "right"):
                 if side not in foot:
                     continue
                 spec = foot[side]
                 s, col = self.text_of(spec, snap, t["white"])
                 mk = spec.get("marker") if isinstance(spec, dict) else None
-                x0 = CARD_IN0 if side == "left" else CARD_IN1 - self.text_w(s, 11.5) - (14 if mk else 0)
+                x0 = CARD_IN0 if side == "left" else CARD_IN1 - self.text_w(s, 11.5 * fk) - (14 if mk else 0)
                 if mk:
                     pts = [(x0, fy - 4), (x0 + 8, fy - 4), (x0 + 4, fy + 3)] if mk == "down" else \
                           [(x0, fy + 3), (x0 + 8, fy + 3), (x0 + 4, fy - 4)]
                     d.polygon([(sc(px), sc(py)) for px, py in pts], fill=t["cyan"] if mk == "down" else t["magenta"])
                     x0 += 14
-                self.draw_text(d, x0, fy, s, 11.5, col, "lm")
+                self.draw_text(d, x0, fy, s, 11.5 * fk, col, "lm")
 
     def _card_list(self, d, card, y, h, snap):
         t = self.t
@@ -373,27 +412,29 @@ class Renderer:
             specs = [spec] * len(rows)
         else:
             rows, specs = [snap] * len(card.get("rows", [])), card.get("rows", [])
-        rowh = card.get("row_h", 20)
+        kk, fk = self._k, min(self._k, 1.2)
+        rowh = card.get("row_h", 20) * kk
         for i, (rs, spec) in enumerate(zip(rows, specs)):
-            ry = y + 28 + i * rowh
-            self.draw_text(d, CARD_IN0, ry, fmt(spec.get("label", ""), rs), 11.5, t["white"], "lm")
-            s, col = self.text_of({k: v for k, v in spec.items() if k != "label"}, rs, t["cyan"])
-            self.draw_text(d, CARD_IN1, ry, s, 11.5, col, "rm")
+            ry = y + 28 * kk + i * rowh
+            self.draw_text(d, CARD_IN0, ry, fmt(spec.get("label", ""), rs), 11.5 * fk, t["white"], "lm")
+            s, col = self.text_of({key: v for key, v in spec.items() if key != "label"}, rs, t["cyan"])
+            self.draw_text(d, CARD_IN1, ry, s, 11.5 * fk, col, "rm")
             if "bar" in spec:
-                self._bar(d, spec["bar"], CARD_IN0, CARD_IN1, ry + 8, rs, height=3)
+                self._bar(d, spec["bar"], CARD_IN0, CARD_IN1, ry + 8 * kk, rs, height=3 * fk)
         if not rows:
-            self.draw_text(d, CARD_IN0, y + 36, "--", 12, t["dim"], "lm")
+            self.draw_text(d, CARD_IN0, y + 36 * kk, "--", 12 * fk, t["dim"], "lm")
 
     def _card_spark(self, d, card, y, h, snap):
         t = self.t
+        k, fk = self._k, min(self._k, 1.2)
         if "big" in card:
             s, col = self.text_of(card["big"], snap, t["white"])
-            self.draw_text(d, CARD_IN0, y + 20, s, 22, col)
+            self.draw_text(d, CARD_IN0, y + 20 * k, s, 22 * fk, col)
         if "right" in card:
             rs, rc = self.text_of(card["right"], snap, t["dim"])
-            self.draw_text(d, CARD_IN1, y + 30, rs, 11, rc, "rm")
+            self.draw_text(d, CARD_IN1, y + 30 * k, rs, 11 * fk, rc, "rm")
         hist = snap.get(card.get("history")) or []
-        x0, x1, y1, y0 = CARD_IN0, CARD_IN1, y + h - 8, y + h - 32
+        x0, x1, y1, y0 = CARD_IN0, CARD_IN1, y + h - 8 * k, y + h - 32 * k - (k - 1) * 12
         d.rectangle(box(x0, y0, x1, y1), fill=(8, 18, 58))
         if len(hist) >= 2:
             mx = max(max(hist), card.get("floor", 1.0))

@@ -14,6 +14,9 @@ If your own file is missing the example is used. Changes take effect after a res
 | Key | Default | Meaning |
 |---|---|---|
 | `language` | `en` | `en` or `it`: dates and tray menu |
+| `layout.header` | `true` | `true`: top bar with page title, date/time and the optional logos. `false`: **compact layout** — no top bar, a 15 % bigger ring, cards stretched over the full height (fonts and spacing scale with them), logos at the two lower corners of the ring |
+| `layout.logo_h` | `22` | logo height in px |
+| `layout.ring_scale` | `1.15` | compact layout only: ring size relative to the default |
 | `display.rotate` | `1` | software rotation (`np.rot90` steps): `1` or `3` depending on mounting |
 | `display.brightness` | `200` | raw firmware value 0–255 |
 | `display.tile` / `merge_gap` | `2` / `4` | change‑detection tile and rectangle merging, in px |
