@@ -1,0 +1,11 @@
+# Tested with Python 3.12 on Windows 10/11.
+pyserial>=3.5
+Pillow>=10.0
+numpy>=1.26
+psutil>=5.9
+PyYAML>=6.0
+pystray>=0.19
+ping3>=4.0
+pywin32>=306
+# pythonnet 3.2.x crashes the whole process on some .NET exceptions raised by LibreHardwareMonitor: stay on 3.0.5
+pythonnet==3.0.5

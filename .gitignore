@@ -1,0 +1,35 @@
+# --- your own settings (the *.example.yaml files are the shipped defaults)
+config/config.yaml
+config/pages.yaml
+
+# --- runtime state
+logs/
+*.log
+
+# --- environments and caches
+.venv/
+__pycache__/
+*.pyc
+
+# --- third-party binaries are downloaded by scripts/setup.ps1, never committed
+tools/lhm/
+
+# --- third-party repositories cloned for study (they have their own licenses)
+refs/
+
+# --- personal / scratch material
+tools/_scratch/
+docs/preview/
+docs/STUDIO.md
+docs/mockup_*.png
+tools/sensors_dump*.txt
+
+# --- logos (trademarks): put your own in assets/ and reference them from config/config.yaml
+assets/*
+!assets/README.md
+
+# --- OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

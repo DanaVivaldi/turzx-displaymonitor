@@ -1,0 +1,116 @@
+# DisplayMonitor
+
+A standalone, lightweight **system monitor for the TURZX / Turing 3.5" IPS USB display** (320×480, USB‑C, "TURZX 3.5 IPS USB Secondary Display"),
+for **Windows 10/11**. It replaces the vendor's `UsbMonitor.exe` with a small Python program that
+
+* shows a **recap page** (CPU, GPU, RAM, disks, board, network) and **7 more pages** you pick from the tray icon,
+* reads CPU / GPU / motherboard / disk sensors through [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor),
+* talks to the display directly over its USB serial port — **no vendor software, no driver to install on Windows 10/11**,
+* only sends the pixels that changed (the display accepts ~165 KB/s, a full frame takes ~1.8 s),
+* **starts by itself at logon**, reconnects after sleep / cable unplug, and recovers from the "black screen" state the firmware falls into after a hard kill.
+
+> Not affiliated with TURZX, Turing, ASUS, Intel or LibreHardwareMonitor. Use at your own risk.
+> Tested on **one** unit: USB `1A86:5722`, serial `USB35INCHIPSV2` (V2 firmware, "Rev A" protocol), Windows 11, Python 3.12.
+> Other 3.5" revisions may work but are untested.
+
+![All pages](docs/img/all_pages.png)
+
+*(screenshots are rendered with invented data: `python -m displaymonitor --demo`)*
+
+## Features
+
+| Page | Ring | Cards |
+|---|---|---|
+| **Overview** (always shown) | 24 CPU threads · CPU load · CPU temperature · RAM used | GPU, RAM, disks / board temperatures, network speed |
+| CPU | same ring | package temperature, clocks & power, per‑core temperatures |
+| GPU | load · VRAM · temperature | temperature, VRAM, clocks & power |
+| Motherboard | fan duty · hottest probe | temperatures, fans (rpm), voltages |
+| Disks | one segment per drive | temperature + space used for up to 6 drives |
+| Memory | RAM · page file | RAM, page file, top processes |
+| Network | download · upload | live graphs, IP / ping / link speed |
+| System | clock | top processes by CPU, uptime, load |
+
+* **One colour language** for every temperature (°C) and utilisation (%): white below 50, green up to 60, then yellow → orange → red up to 100 (thresholds are configurable).
+* **Pages are plain YAML** (`config/pages.yaml`): rings, cards, bars, sparklines, legend, thresholds — no code needed.
+* **Alerts**: if the CPU/GPU/RAM/disks get too hot the relevant page pops up by itself.
+* **Tray icon**: pick a page (it stays until you go back to the recap), toggle auto‑rotation, brightness, quit.
+* Optional corner logos (none are shipped, see [`assets/README.md`](assets/README.md)). English and Italian UI.
+
+## Requirements
+
+* Windows 10 / 11 (x64), **administrator rights** (needed to read CPU & motherboard sensors),
+* Python 3.12 (3.10–3.13 should work; `pythonnet` is pinned to 3.0.5, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)),
+* the display connected by USB‑C (it shows up as a "USB Serial Device (COMx)"; Windows 10/11 has the driver built in),
+* the **PawnIO** driver for CPU temperature / clocks / power and motherboard sensors (GPU, disks, RAM and network work without it).
+  `scripts\setup.ps1` offers to install it with `winget`. It is a signed kernel driver used by LibreHardwareMonitor ≥ 0.9.5.
+
+## Install
+
+```powershell
+git clone https://github.com/DanaVivaldi/turzx-displaymonitor.git
+cd turzx-displaymonitor
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1     # venv + dependencies + LibreHardwareMonitor (hash-checked) + PawnIO (asks)
+```
+
+Run it once by hand (elevated PowerShell) to see that everything works:
+
+```powershell
+.\.venv\Scripts\python.exe -m displaymonitor
+```
+
+Start at every logon (scheduled task, highest privileges, hidden):
+
+```powershell
+.\scripts\install_autostart.ps1        # remove with scripts\uninstall_autostart.ps1
+```
+
+If the display is mounted the other way up, set `display.rotate: 3` in `config/config.yaml`.
+
+## Usage
+
+* **Tray icon** → *Show page* / *Back to recap* / *Automatic rotation* / *Brightness* / *Quit*.
+* **Command line** (talks to the running instance):
+
+  ```powershell
+  .\.venv\Scripts\python.exe -m displaymonitor --send quit          # clean exit (always prefer this to killing the process)
+  .\.venv\Scripts\python.exe -m displaymonitor --send page:gpu      # show a page;  home | next | prev | rotate | brightness:150
+  ```
+* `python -m displaymonitor --preview` renders every page with your real sensors to `docs/preview/*.png` (no display needed),
+  `--dump-sensors` prints every sensor key, `--demo` renders invented data, `--debug` logs per‑frame statistics.
+* Logs: `logs/displaymonitor.log` (and `logs/fault.txt` for native crashes).
+
+## Configuration
+
+Copy/edit `config/config.yaml` (general settings, thresholds, alerts) and `config/pages.yaml` (pages). Both are created from the
+`*.example.yaml` files by `setup.ps1`, are git‑ignored and fully documented in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| CPU temperature / motherboard values are `--` | run elevated and install PawnIO (`winget install namazso.PawnIO`) |
+| Screen **black** after the program was killed / crashed | restart the program: it detects the unclean exit (`logs/running.flag`) and flushes the half‑sent bitmap (~13 s). Unplugging the cable also works |
+| Image upside down | `display.rotate: 3` (software rotation) |
+| Nothing happens, "display not found" in the log | check Device Manager for `USB Serial Device (COMx)` with VID 1A86 PID 5722; close the vendor's `UsbMonitor.exe`, only one program can own the port |
+| Wrong network adapter | set `network.interface` in `config.yaml` |
+| Two `pythonw.exe` processes | normal: the venv launcher plus the real interpreter |
+| Task "Running" but nothing on screen after a quit | the Task Scheduler ignores a start while the previous instance is still exiting: wait a few seconds and start again |
+
+More background on why these things happen: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+## How it works (short)
+
+Three layers: **sensors** (a thread polling LibreHardwareMonitor / psutil at different rates) → **renderer** (Pillow, pages described in YAML,
+drawn at 3× and downsampled) → **display driver** (diffs the frame in 2 px tiles and sends only changed rectangles, split in blocks of ≤ 12 800 px).
+Details in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md); the reverse‑engineered device behaviour is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+## Credits & licences
+
+Code: MIT, see [LICENSE](LICENSE). The device protocol was documented by the community; this project re‑implements it from scratch and was
+informed by [turing-smart-screen-python](https://github.com/mathoudebine/turing-smart-screen-python) (GPL‑3.0),
+[Tedd.TuringScreen](https://github.com/tedd/Tedd.TuringScreen) (MIT), [TelemetryForge](https://github.com/riccione83/TelemetryForge) (MIT) and
+[TURZX-3.5-Custom-Monitor](https://github.com/xlwreally/TURZX-3.5-Custom-Monitor) (MIT). Sensor access uses
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (MPL‑2.0, downloaded, not redistributed) and the
+[PawnIO](https://github.com/namazso/PawnIO) driver. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Italiano: [README.it.md](README.it.md)

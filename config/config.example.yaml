@@ -1,0 +1,49 @@
+# DisplayMonitor - general settings.
+# Copy this file to config/config.yaml and edit it; config/config.yaml is git-ignored (your own settings).
+# If config/config.yaml does not exist, this example is used.
+
+language: en           # language of dates and of the tray menu (en | it)
+
+display:
+  rotate: 1            # SOFTWARE rotation of the frame (np.rot90 steps): 1 or 3, depending on how the screen is mounted.
+                       # The panel itself is always kept in portrait: the firmware's own rotation is unreliable.
+  max_block_px: 12800  # every bitmap command stays below this many pixels (the firmware's DMA limit)
+  flood_bytes: 2200000 # after an abnormal exit / link error: zero bytes that complete a half-sent bitmap (~13 s)
+  reset_on_connect: false  # the RESET command has no visible effect on the tested unit
+  refresh_band: 8      # rows resent on every frame, cycling over the screen: heals corrupted pixels (0 = off)
+  brightness: 200      # 0-255 (raw firmware value)
+  tile: 2              # granularity (px) of the change detection
+  merge_gap: 4         # merge changed rectangles closer than this many px
+
+refresh_s: 1.0         # how often the frame is redrawn and the differences are sent
+home_page: overview    # the recap page, always shown
+stay_on_selected: true # a page picked from the tray stays until you choose "Back to recap".
+                       # Every start begins on the recap page (the choice is never saved).
+peek_s: 30             # only used when stay_on_selected is false: seconds before going back to the recap
+rotate_s: 0            # 0 = no automatic rotation; N = seconds per page (can also be toggled from the tray)
+
+theme:
+  # logos: [assets/left.png, assets/right.png]   # optional logos in the top corners (none are shipped)
+  # Colour thresholds, the same for temperatures (°C) and utilisation (%):
+  #   [white_below, green_until, red_at]  ->  text is white below the 1st value, green up to the 2nd,
+  #   then yellow -> orange -> red, reaching full red at the 3rd. Bars use the same scheme.
+  scale: [50, 60, 100]
+
+network:
+  interface: auto      # or an exact adapter name, e.g. "Ethernet"
+  ping_host: 1.1.1.1
+
+sensors:
+  fast_s: 1.0
+  storage_s: 10
+  procs_s: 3
+  ping_s: 5
+  mb_ignore_temps: []  # motherboard probes that read garbage (unconnected), e.g. [5] hides "Temperature #5"
+
+# Alerts: when the condition is true the given page is shown for hold_s seconds.
+# Conditions use sensor keys (see `python -m displaymonitor --dump-sensors`).
+alerts:
+  - {page: cpu, when: "cpu_temp is not None and cpu_temp >= 85", hold_s: 30}
+  - {page: gpu, when: "gpu_temp is not None and gpu_temp >= 80", hold_s: 30}
+  - {page: memory, when: "mem_pct is not None and mem_pct >= 92", hold_s: 30}
+  - {page: disks, when: "disk_temp_max is not None and disk_temp_max >= 65", hold_s: 30}
