@@ -231,10 +231,10 @@ class App:
         self.refresh_s = top["refresh_s"]
         self.stay_on_selected = bool(cfg.get("stay_on_selected", True))
         self.peek_s = top["peek_s"]
-        self.rotate_s = top["rotate_s"] or (self.display.slow["rotate_s"] if self.display.mode == "slow" else 12.0)
         self._config_logos = tuple(renderer.t["logos"])
         self._load_state()
-        self.display.configure(cfg.get("display", {}))
+        self.display.configure(cfg.get("display", {}))           # first: the new mode decides the default page dwell below
+        self.rotate_s = top["rotate_s"] or (self.display.slow["rotate_s"] if self.display.mode == "slow" else 12.0)
         if "brightness" in cfg.get("display", {}) and Display._clamp_pct(cfg["display"]["brightness"]) != self._cfg_brightness:
             self.base_brightness = self._cfg_brightness = Display._clamp_pct(cfg["display"]["brightness"])
         self.lang = cfg.get("language", "en")

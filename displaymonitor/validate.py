@@ -11,6 +11,7 @@ from math import gcd
 log = logging.getLogger(__name__)
 HW_W, HW_H = 320, 480
 MODES = ("normal", "slow")
+MIN_TX_BUDGET = 1024                 # = txsched.MIN_BUDGET (kept here so validate.py has no dependency on the driver)
 TILES = tuple(t for t in range(1, gcd(HW_W, HW_H) + 1) if HW_W % t == 0 and HW_H % t == 0)      # 1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 80, 160
 
 
@@ -34,43 +35,54 @@ def number(value, default, lo, hi, kind=float, name="value", warnings: list | No
 def display_settings(cfg: dict | None, fallback: dict | None = None) -> tuple[dict, list[str]]:
     """The `display:` section with every value checked. `fallback` supplies the values to keep when one is invalid (a hot reload)."""
     cfg, fb, w = dict(cfg or {}), dict(fallback or {}), []
+
+    def keep(name, default):
+        """What to use when `name` is unusable: the current value (a hot reload) - but only if the key is present in the file.
+        A key that was REMOVED from the file goes back to its default."""
+        return fb.get(name, default) if name in cfg else default
     out = {
-        "rotate": int(number(cfg.get("rotate"), fb.get("rotate", 1), 1, 3, int, "display.rotate", w)),
-        "brightness": int(round(number(cfg.get("brightness"), fb.get("brightness", 100), 0, 100, float, "display.brightness", w))),
-        "max_block_px": int(number(cfg.get("max_block_px"), fb.get("max_block_px", 12800), 320, 51200, int, "display.max_block_px", w)),
-        "flood_bytes": int(number(cfg.get("flood_bytes"), fb.get("flood_bytes", 2_200_000), 0, 20_000_000, int, "display.flood_bytes", w)),
-        "refresh_band": int(number(cfg.get("refresh_band"), fb.get("refresh_band", 8), 0, HW_H, int, "display.refresh_band", w)),
-        "band_budget": int(number(cfg.get("band_budget"), fb.get("band_budget", 24_000), 0, 10_000_000, int, "display.band_budget", w)),
-        "merge_gap": int(number(cfg.get("merge_gap"), fb.get("merge_gap", 4), 0, 160, int, "display.merge_gap", w)),
-        "reset_on_connect": bool(cfg.get("reset_on_connect", fb.get("reset_on_connect", False))),
-        "bulk_px": int(number(cfg.get("bulk_px"), fb.get("bulk_px", 6000), 100, 153_600, int, "display.bulk_px", w)),
+        "rotate": int(number(cfg.get("rotate"), keep("rotate", 1), 1, 3, int, "display.rotate", w)),
+        "brightness": int(round(number(cfg.get("brightness"), keep("brightness", 100), 0, 100, float, "display.brightness", w))),
+        "max_block_px": int(number(cfg.get("max_block_px"), keep("max_block_px", 12800), 320, 51200, int, "display.max_block_px", w)),
+        "flood_bytes": int(number(cfg.get("flood_bytes"), keep("flood_bytes", 2_200_000), 0, 20_000_000, int, "display.flood_bytes", w)),
+        "refresh_band": int(number(cfg.get("refresh_band"), keep("refresh_band", 8), 0, HW_H, int, "display.refresh_band", w)),
+        "band_budget": int(number(cfg.get("band_budget"), keep("band_budget", 24_000), 0, 10_000_000, int, "display.band_budget", w)),
+        "merge_gap": int(number(cfg.get("merge_gap"), keep("merge_gap", 4), 0, 160, int, "display.merge_gap", w)),
+        "reset_on_connect": bool(cfg.get("reset_on_connect", keep("reset_on_connect", False))),
+        "bulk_px": int(number(cfg.get("bulk_px"), keep("bulk_px", 6000), 100, 153_600, int, "display.bulk_px", w)),
     }
-    mode = str(cfg.get("mode", fb.get("mode", "normal")) or "normal").lower()
+    mode = str(cfg.get("mode", keep("mode", "normal")) or "normal").lower()
     if mode not in MODES:
-        w.append(f"display.mode: {mode!r} is not one of {', '.join(MODES)}, using {fb.get('mode', 'normal')}")
-        mode = fb.get("mode", "normal")
+        w.append(f"display.mode: {mode!r} is not one of {', '.join(MODES)}, using {keep('mode', 'normal')}")
+        mode = keep("mode", "normal")
     out["mode"] = mode
     slow = cfg.get("slow") if isinstance(cfg.get("slow"), dict) else {}
-    fbs = fb.get("slow", {})
+    fbs_all = fb.get("slow", {})
+
+    def fbs_get(name, default):
+        return fbs_all.get(name, default) if name in slow else default
     if cfg.get("slow") not in (None, {}) and not isinstance(cfg.get("slow"), dict):
         w.append("display.slow must be a mapping, using the defaults")
     out["slow"] = {
-        "noncritical_s": number(slow.get("noncritical_s"), fbs.get("noncritical_s", 10.0), 1.0, 600.0, float, "display.slow.noncritical_s", w),
-        "band_every": int(number(slow.get("band_every"), fbs.get("band_every", 5), 1, 1000, int, "display.slow.band_every", w)),
-        "rotate_s": number(slow.get("rotate_s"), fbs.get("rotate_s", 30.0), 5.0, 86400.0, float, "display.slow.rotate_s", w),
+        "noncritical_s": number(slow.get("noncritical_s"), fbs_get("noncritical_s", 10.0), 1.0, 600.0, float, "display.slow.noncritical_s", w),
+        "band_every": int(number(slow.get("band_every"), fbs_get("band_every", 5), 1, 1000, int, "display.slow.band_every", w)),
+        "rotate_s": number(slow.get("rotate_s"), fbs_get("rotate_s", 30.0), 5.0, 86400.0, float, "display.slow.rotate_s", w),
     }
     # bytes per refresh cycle: 0 = unlimited (the normal mode's default), the slow mode defaults to ~0.25 s of link time
     default_budget = 0 if mode == "normal" else 40_960
-    out["tx_budget"] = int(number(cfg.get("tx_budget_bytes"), fb.get("tx_budget", default_budget) if "tx_budget_bytes" in cfg else default_budget,
+    out["tx_budget"] = int(number(cfg.get("tx_budget_bytes"), keep("tx_budget", default_budget) if "tx_budget_bytes" in cfg else default_budget,
                                   0, 50_000_000, int, "display.tx_budget_bytes", w))
-    out["device"] = cfg.get("device") if "device" in cfg else fb.get("device")
+    if 0 < out["tx_budget"] < MIN_TX_BUDGET:
+        w.append(f"display.tx_budget_bytes: {out['tx_budget']} is below the smallest usable budget, using {MIN_TX_BUDGET} (one full-width row)")
+        out["tx_budget"] = MIN_TX_BUDGET
+    out["device"] = cfg.get("device")                     # absent = the default profile
     if out["rotate"] == 2:
         w.append("display.rotate: 2 is not supported (the panel is kept in portrait), using 1")
         out["rotate"] = 1
-    tile = number(cfg.get("tile"), fb.get("tile", 2), 1, HW_W, int, "display.tile", w)
+    tile = number(cfg.get("tile"), keep("tile", 2), 1, HW_W, int, "display.tile", w)
     if int(tile) not in TILES:
-        w.append(f"display.tile: {int(tile)} does not divide 320 and 480 (allowed: {', '.join(map(str, TILES))}), using {fb.get('tile', 2)}")
-        tile = fb.get("tile", 2)
+        w.append(f"display.tile: {int(tile)} does not divide 320 and 480 (allowed: {', '.join(map(str, TILES))}), using {keep('tile', 2)}")
+        tile = keep("tile", 2)
     out["tile"] = int(tile)
     return out, w
 

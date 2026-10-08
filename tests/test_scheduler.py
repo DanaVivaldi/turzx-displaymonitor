@@ -73,8 +73,8 @@ def test_txsched_blocks_priorities_and_budget():
     chosen, rest = txsched.take(blocks, 5000)
     assert len(chosen) == 2 and len(rest) == 8 and chosen + rest == blocks
     assert txsched.take(blocks, 0) == (blocks, [])                                                  # 0 = unlimited
-    chosen, rest = txsched.take(blocks, 10)
-    assert len(chosen) == 1 and len(rest) == 9                                                      # always makes progress
+    chosen, rest = txsched.take(blocks, 10)                                                         # below the floor: raised to MIN_BUDGET, never exceeded
+    assert chosen and sum(txsched.wire_bytes(b) for _, b in chosen) <= txsched.MIN_BUDGET
     assert txsched.latency_estimate(165_000) == pytest.approx(1.0)
 
 
@@ -99,7 +99,7 @@ def test_budget_limits_each_cycle_and_the_panel_converges_on_the_latest_frame():
         sent_per_cycle.append(d._ser.payload())
         if d.tx["pending"] == 0:
             break
-    assert max(sent_per_cycle) <= 20_000 + 12_800 * 2                                               # budget + at most one block over it
+    assert max(sent_per_cycle) <= 20_000                                                            # a hard limit (pixels; headers are on top, see the next test)
     assert len(sent_per_cycle) > 3                                                                  # it really was spread over several cycles
     assert d.tx["pending"] == 0 and np.array_equal(d._prev, portrait(d, target))                    # converged
     assert d.tx["used"] is not None and d.tx["budget"] == 20_000
@@ -328,7 +328,7 @@ def test_only_compatible_ports_are_ever_chosen():
     mine = port("COM3")
     assert devices.choose([other], prof) is None and devices.choose([], prof) is None               # an unrelated serial device is never opened
     assert devices.choose([other, mine], prof) == "COM3"
-    assert devices.choose([port("COM4", vid=1, pid=2, serial="USB35INCHIPSV2")], prof) == "COM4"    # the known serial still identifies it
+    assert devices.choose([port("COM4", vid=1, pid=2, serial="USB35INCHIPSV2")], prof) is None      # the serial alone never makes a port eligible
     assert devices.compatible([other, mine], prof) == [mine]
 
 

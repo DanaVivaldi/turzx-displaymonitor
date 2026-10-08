@@ -45,7 +45,7 @@ If your own file is missing the example is used. Changes take effect after a res
 | `display.max_block_px` | `12800` | maximum pixels per bitmap command |
 | `display.refresh_band` | `8` | rows resent every frame, cycling (self‑healing); `0` = off |
 | `display.mode` | `normal` | `normal` or `slow`, see [Slow link profile](#slow-link-profile-and-transmission-budget) |
-| `display.tx_budget_bytes` | `0` (slow: `40960`) | bytes sent per refresh cycle; `0` = unlimited |
+| `display.tx_budget_bytes` | `0` (slow: `40960`) | bytes put on the link per refresh cycle, headers included, as a hard limit; `0` = unlimited; a positive value below `1024` is raised to `1024` (one full-width row) with a warning |
 | `display.bulk_px` | `6000` | a changed rectangle larger than this is a *background*: it goes out after the numbers and bars |
 | `display.slow.*` | see below | `noncritical_s` 10, `band_every` 5, `rotate_s` 30 |
 | `display.device.*` | the TURZX ids | which USB device is the display, see [Device profiles](#device-profiles) |
@@ -139,7 +139,7 @@ The panel takes ~165 KB/s: a whole-screen change is ~300 KB, about 2 seconds. Ev
 drew, the framebuffer it **believes the panel shows**, and the **work still pending**, which is not stored but always recomputed as the difference between the two.
 A newer frame therefore *replaces* whatever was not sent yet: the panel converges on the latest picture and never accumulates a backlog.
 
-Each cycle sends at most `display.tx_budget_bytes` (`0` = no limit, the default in `normal`), in this order:
+Each cycle puts at most `display.tx_budget_bytes` on the wire (`0` = no limit, the default in `normal`). The count includes the 6-byte header of every bitmap command, and it is a real ceiling: a block larger than the budget is cut into rows (or pieces of a row) that fit, and each cycle's rectangles are trimmed to the pixels that really differ, so even a 1024-byte budget moves forward and converges. Order of sending:
 
 | Priority | What | Budgeted? |
 |---|---|---|
@@ -148,7 +148,7 @@ Each cycle sends at most `display.tx_budget_bytes` (`0` = no limit, the default 
 | 2 bulk | subtle or large changes: a background tint step, a page switch | yes, after the data |
 | 3 healing | the self-healing band | only if nothing is pending and budget is left over (and the frame's own changes are below `band_budget`) |
 
-A block is a bitmap command of at most `max_block_px` pixels; a block is recorded as "sent" only after both of its writes returned. A serial error during a
+A block is a bitmap command of at most `max_block_px` pixels. It is recorded as "sent" only after **every byte** of its header and pixels was accepted by the port: `serial.write()` may take only part of its input, so the driver repeats the write until all of it is out, and a port that accepts nothing for 2 s counts as a lost link. A serial error during a
 partial send forgets the framebuffer (a full refresh follows the reconnect) and arms the usual recovery flush.
 
 **`mode: slow`** is the profile for a slow or busy link. With the same pages it:
@@ -168,7 +168,7 @@ replaced unsent work (*coalesced*). The tray and web lines only show budget / pe
 
 ## Device profiles
 
-By default the display is whatever shows up as VID `0x1A86`, PID `0x5722` or serial `USB35INCHIPSV2` (the tested TURZX unit). `display.device` narrows or changes that:
+By default the display is the USB device with **VID `0x1A86` and PID `0x5722`** (the tested TURZX unit, which reports the serial number `USB35INCHIPSV2`). `display.device` changes that:
 
 ```yaml
 display:
@@ -181,14 +181,14 @@ display:
     index: 0               # several compatible displays and no serial / port: which one
 ```
 
-Only ports whose USB ids match are ever opened: an unrelated serial device, or a `port:` that is not a compatible display, is refused (and why is logged once). With several compatible displays and no
-`serial` / `port` / `index`, the first by port name is used and a warning lists the candidates. **Limitation:** the Rev A protocol cannot be verified on the wire (this firmware stays silent to a HELLO),
+**Policy:** VID and PID must **both** match; a `serial` can only narrow the choice further and never makes a port eligible by itself (the older shortcut of accepting the serial number alone is gone). Only ports whose USB ids match are ever opened: an unrelated serial device, or a `port:` that is not a compatible display, is refused (and why is logged once). With several compatible displays and no
+`serial` / `port` / `index`, the first by port name is used and a warning lists the candidates. An `index` with no display behind it opens **nothing** (a warning is logged once) instead of falling back to another panel. **Limitation:** the Rev A protocol cannot be verified on the wire (this firmware stays silent to a HELLO),
 so a clone is trusted on its USB ids alone and must really speak the same protocol; other protocols are not supported (`profile` accepts only `turzx-rev-a`). Several panels at once are not supported.
 
 ## Safety nets
 
 * **A wrong setting never stops the program.** Numbers in `display:`, `refresh_s`, `rotate_s`, `peek_s` are range-checked: `tile` must divide 320 and 480 (1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 80, 160), `refresh_band` is 0–480, `max_block_px` 320–51200, `brightness` 0–100, `rotate` 1 or 3.
-  A bad value is replaced by a safe one (on a hot reload: the current one is kept) and `config:` warnings go to `logs/displaymonitor.log`.
+  A bad value is replaced by a safe one (on a hot reload, a key that is present but invalid keeps its current value; a key you remove goes back to its default) and `config:` warnings go to `logs/displaymonitor.log`.
 * **A broken config / pages file never stops the start.** Invalid YAML, a root that is not a mapping, a section of the wrong type, a `pages:` list that is empty or has duplicate / missing ids: the program logs *what* is wrong
   (`config.yaml: 'display' must be a mapping ...`) and starts with the included example for that file (in the language of your `config.yaml` when it is valid). **Your files are never modified.** On a hot reload the previous working configuration stays in force.
 * **A bad command is ignored**, not fatal: `--send brightness:abc` or `--send logo:` only leave a warning in the log.

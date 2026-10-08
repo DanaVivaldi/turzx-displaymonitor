@@ -1,16 +1,16 @@
 """Which serial port is the display? Identification by USB ids, never by "whatever is plugged in".
 
-The default is exactly what was always used: VID 0x1A86, PID 0x5722 or the serial number USB35INCHIPSV2. It can be narrowed or
-changed in config.yaml (`display.device`):
+The default is the tested unit: USB VID 0x1A86 and PID 0x5722 (it reports the serial number USB35INCHIPSV2). VID and PID must BOTH match;
+a serial number can only narrow the choice further, it never makes a port eligible by itself. It can be changed in config.yaml (`display.device`):
 
     display:
       device:
         profile: turzx-rev-a   # the only protocol implemented (see docs/PROTOCOL.md); anything else is refused
         vid: 0x1a86            # a clone with other USB ids that speaks the same protocol: put its ids here
         pid: 0x5722
-        serial: ""             # only the display with this exact serial number
+        serial: ""             # of the ports with those ids, only the one with this exact serial number
         port: ""               # only this port (COM3, /dev/ttyACM0): it must STILL match the ids, a port is never opened on trust
-        index: 0               # several compatible displays and no serial / port: which one (0 = first, sorted by port name)
+        index: 0               # several compatible displays and no serial / port: which one (0 = first, sorted by port name); an index with no display behind it opens nothing
 
 The protocol cannot be verified on the wire (this firmware stays silent to a HELLO), so a port is opened only when its USB ids match the profile.
 """
@@ -61,12 +61,11 @@ def parse_profile(cfg) -> tuple[dict, list[str]]:
 
 
 def compatible(ports, prof: dict) -> list:
-    """The serial ports whose USB ids match the profile (and the serial number, when one is configured), sorted by device name."""
+    """The serial ports whose USB VID and PID BOTH match the profile; a configured serial number only narrows that further.
+    A serial number alone never makes a port eligible. Sorted by device name."""
     out = []
     for p in ports:
-        ids_ok = (getattr(p, "vid", None) == prof["vid"] and getattr(p, "pid", None) == prof["pid"])
-        known_serial = (not prof["custom_ids"]) and getattr(p, "serial_number", None) == DEFAULT_SERIAL
-        if not (ids_ok or known_serial):
+        if getattr(p, "vid", None) != prof["vid"] or getattr(p, "pid", None) != prof["pid"]:
             continue
         if prof["serial"] and getattr(p, "serial_number", None) != prof["serial"]:
             continue
@@ -86,8 +85,14 @@ def choose(ports, prof: dict, warn_once: set | None = None) -> str | None:
         return str(match[0].device) if match else None
     if not cands:
         return None
+    if prof["index"] >= len(cands):                          # asking for a display that is not there: open none rather than the wrong one
+        if warn_once is not None and ("index", prof["index"], len(cands)) not in warn_once:
+            warn_once.add(("index", prof["index"], len(cands)))
+            log.warning("display.device.index %d but only %d compatible display(s) found (%s): not opened",
+                        prof["index"], len(cands), ", ".join(str(p.device) for p in cands))
+        return None
     if len(cands) > 1 and warn_once is not None and ("multi", len(cands)) not in warn_once:
         warn_once.add(("multi", len(cands)))
         log.warning("%d compatible displays found (%s): using #%d; choose with display.device.serial / port / index",
-                    len(cands), ", ".join(str(p.device) for p in cands), min(prof["index"], len(cands) - 1))
-    return str(cands[min(prof["index"], len(cands) - 1)].device)
+                    len(cands), ", ".join(str(p.device) for p in cands), prof["index"])
+    return str(cands[prof["index"]].device)

@@ -62,6 +62,7 @@ class Display:
         self._prev = None             # what the panel is believed to show: a region is copied in only after its bytes were written
         self._pending_bytes = 0       # bytes of the newest frame still waiting to be sent (always derived from diff(_prev, newest frame))
         self.last_bytes = 0
+        self.last_wire = 0            # last_bytes + the headers: what the budget counts
         self.last_rects = 0
         self.last_ms = 0.0            # time spent sending the last frame
         self.band_skipped = 0         # frames whose healing band was left out (panel busy / budget used / slow-mode cadence)
@@ -82,13 +83,12 @@ class Display:
         self.rot_k, self.tile, self.band, self.band_budget, self.max_px = st["rotate"], st["tile"], st["refresh_band"], st["band_budget"], st["max_block_px"]
         self.gap_tiles = st["merge_gap"] // self.tile
         self.mode, self.slow, self.tx_budget, self.bulk_px = st["mode"], st["slow"], st["tx_budget"], st["bulk_px"]
-        if "device" in (cfg or {}):
-            profile, dw = devices.parse_profile(st["device"])
-            validate.warn_all(dw)
-            if profile != self.profile:
-                self.profile, self._warned = profile, set()
-                if self._ser is not None:               # another display was asked for: reconnect on the next cycle
-                    self.disconnect()
+        profile, dw = devices.parse_profile(st["device"])
+        validate.warn_all(dw)
+        if profile != self.profile:
+            self.profile, self._warned = profile, set()
+            if self._ser is not None:                   # another display was asked for: reconnect on the next cycle
+                self.disconnect()
         self.invalidate()                       # rotation / tile changes: redraw everything
 
     # -- connection -----------------------------------------------------------------------------
@@ -151,7 +151,7 @@ class Display:
                     self.flood_bytes / 165_000)
         zeros, sent = bytes(65536), 0
         while sent < self.flood_bytes:
-            self._ser.write(zeros)
+            self._write_all(zeros)
             sent += len(zeros)
         self._ser.flush()
 
@@ -188,8 +188,29 @@ class Display:
         self._ser = None
         self._prev = None
 
+    WRITE_STALL_S = 2.0           # a port that accepts no byte at all for this long is treated as a lost link
+
+    def _write_all(self, data: bytes):
+        """Write every byte: serial.write() may accept only part of its input (it returns how many). A short write that went
+        unnoticed would desynchronise the firmware's command parser, so the loop repeats until all of it is out, and gives up
+        (OSError, handled as a link loss) if the port stops accepting bytes."""
+        view = memoryview(data)
+        off, stalled = 0, None
+        while off < len(view):
+            n = self._ser.write(view[off:])
+            if n is None:                                  # a port object that does not report a count: take it as complete
+                return
+            if n > 0:
+                off, stalled = off + min(n, len(view) - off), None
+                continue
+            now = time.time()
+            stalled = stalled or now
+            if now - stalled > self.WRITE_STALL_S:
+                raise OSError(f"serial write stalled after {off} of {len(view)} bytes")
+            time.sleep(0.005)
+
     def _write(self, data: bytes):
-        self._ser.write(data)
+        self._write_all(data)
         self._ser.flush()
 
     # -- drawing --------------------------------------------------------------------------------
@@ -227,7 +248,7 @@ class Display:
             prev = self._prev
             self._cycle += 1
             tx["cycles"] = self._cycle
-            self.last_rects, self.last_bytes = 0, 0
+            self.last_rects, self.last_bytes, self.last_wire = 0, 0, 0
             if prev is None or critical:                                 # full refresh: unbudgeted, then `_prev` is the whole frame
                 if prev is not None and self._pending_bytes:
                     tx["coalesced"] += 1
@@ -236,9 +257,9 @@ class Display:
                 self._send_blocks(hw, blocks, None)
                 self._ser.flush()
                 self._prev = hw.copy()
-                self._pending_bytes, sent, rest, budget = 0, self.last_bytes, [], 0
+                self._pending_bytes, sent, rest, budget = 0, self.last_wire, [], 0
             else:
-                budget = self.tx_budget
+                budget = max(self.tx_budget, txsched.MIN_BUDGET) if self.tx_budget > 0 else 0
                 if self._pending_bytes:                                  # the previous frame was not fully out: this one replaces it
                     tx["coalesced"] += 1
                 if budget > 0:                                           # budgeted: separate the content from the subtle / large changes
@@ -251,10 +272,10 @@ class Display:
                     changed = sum(txsched.rect_bytes(r) for r in rects)
                 chosen, rest = txsched.take(blocks, budget)
                 self._send_blocks(hw, chosen, prev)                      # `prev` gains each block only after it was written
-                sent = self.last_bytes
+                sent = self.last_wire
                 self._pending_bytes = sum(txsched.rect_bytes(b) for _, b in rest)
                 if self.band:                                            # self-healing band: lowest priority, only with spare capacity
-                    band_bytes = HW_W * self.band * txsched.BYTES_PER_PX
+                    band_bytes = txsched.wire_bytes((0, 0, HW_W, self.band))
                     slow_skip = self.mode == "slow" and self._cycle % max(1, self.slow["band_every"]) != 0
                     if (not rest and not slow_skip and changed <= self.band_budget and (budget <= 0 or sent + band_bytes <= budget)):
                         blk = (0, self._band_y, HW_W, self.band)
@@ -263,8 +284,8 @@ class Display:
                     else:
                         self.band_skipped += 1
                 self._ser.flush()
-            tx.update(budget=budget, sent=self.last_bytes, pending=self._pending_bytes,
-                      used=(self.last_bytes / budget if budget else None), latency_s=txsched.latency_estimate(self._pending_bytes))
+            tx.update(budget=budget, sent=self.last_wire, pending=self._pending_bytes,
+                      used=(self.last_wire / budget if budget else None), latency_s=txsched.latency_estimate(self._pending_bytes))
             self.last_ms = (time.time() - t0) * 1000
             return True
         except (serial.SerialException, OSError) as e:
@@ -324,16 +345,30 @@ class Display:
         data, bulk = [], self._rects_from_mask(changed & ~strong)
         for r in self._rects_from_mask(strong):
             (data if r[2] * r[3] <= self.bulk_px else bulk).append(r)
-        return data, bulk
+        # Tile-level rectangles still contain rows that are already right once a piece of them has been sent: cut each one down to
+        # the pixels that really differ, so a tiny budget never re-sends what the panel has (and always moves forward).
+        trim = lambda rects: [t for t in (self._trim(prev, cur, r) for r in rects) if t]      # noqa: E731
+        return trim(data), trim(bulk)
+
+    @staticmethod
+    def _trim(prev, cur, rect):
+        """The bounding box of the pixels of `rect` where `cur` differs from `prev`, or None."""
+        x, y, w, h = rect
+        diff = prev[y:y + h, x:x + w] != cur[y:y + h, x:x + w]
+        rows, cols = np.flatnonzero(diff.any(axis=1)), np.flatnonzero(diff.any(axis=0))
+        if rows.size == 0:
+            return None
+        return (x + int(cols[0]), y + int(rows[0]), int(cols[-1] - cols[0] + 1), int(rows[-1] - rows[0] + 1))
 
     def _send_blocks(self, hw, blocks, prev):
         """Write the blocks [(priority, (x, y, w, h))] (each already <= max_block_px). When `prev` is given, a block's pixels are copied into
         it only after both of its writes returned: an error leaves `prev` untouched for that block (and the caller resets it)."""
         for _prio, (x, y, w, h) in blocks:
             data = np.ascontiguousarray(hw[y:y + h, x:x + w]).tobytes()
-            self._ser.write(_header(CMD_BITMAP, x, y, x + w - 1, y + h - 1))
-            self._ser.write(data)
+            self._write_all(_header(CMD_BITMAP, x, y, x + w - 1, y + h - 1))
+            self._write_all(data)
             if prev is not None:
                 prev[y:y + h, x:x + w] = hw[y:y + h, x:x + w]
             self.last_bytes += len(data)
+            self.last_wire += txsched.HEADER_BYTES + len(data)
             self.last_rects += 1
