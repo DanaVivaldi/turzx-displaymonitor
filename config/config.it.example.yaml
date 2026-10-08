@@ -23,6 +23,25 @@ display:
   refresh_band: 8      # righe ritrasmesse a ogni frame a rotazione: guarisce i pixel corrotti (0 = disattivato)
   tile: 2              # granularita' (px) del rilevamento differenze
   merge_gap: 4         # unisce rettangoli separati da meno di N px
+  band_budget: 24000   # la banda di auto-riparazione salta i frame i cui cambi superano questi byte
+  # --- pianificazione della trasmissione (il collegamento fa ~165 KB/s: un cambio a schermo intero richiede ~2 s) --------
+  mode: normal         # normal | slow. `slow` e' il profilo per un collegamento lento / occupato: un budget di byte per ciclo (prima i numeri,
+                       # poi gli sfondi; un frame nuovo sostituisce il lavoro non ancora inviato), letture non critiche aggiornate ogni
+                       # `slow.noncritical_s`, banda di riparazione ogni `slow.band_every` cicli, permanenza piu' lunga nella rotazione automatica.
+                       # `normal` si comporta esattamente come prima.
+  # tx_budget_bytes: 0 # byte inviati per ciclo di aggiornamento; 0 = illimitato (default di normal). slow usa 40960 (~0,25 s di collegamento)
+  # bulk_px: 6000      # un rettangolo piu' grande di tanti pixel e' uno "sfondo" e parte dopo numeri e barre
+  # slow:
+  #   noncritical_s: 10  # rete, dischi, quadrati dei thread, uptime ... si aggiornano al massimo con questa frequenza (CPU / GPU / RAM restano in tempo reale)
+  #   band_every: 5      # una banda di riparazione ogni N cicli
+  #   rotate_s: 30       # secondi per pagina con la rotazione automatica attiva e `rotate_s` qui sotto non impostato
+  # --- quale dispositivo USB e' il display --------------------------------------------------------------------------
+  # device:                  # i valori predefiniti sono l'unita' TURZX provata: VID 0x1a86, PID 0x5722 / seriale USB35INCHIPSV2
+  #   vid: 0x1a86            # un clone con lo stesso protocollo ma altri ID USB: mettili qui
+  #   pid: 0x5722
+  #   serial: ""             # solo il display con questo numero di serie
+  #   port: ""               # solo questa porta (COM3, /dev/ttyACM0); deve comunque avere gli ID giusti: una porta non viene mai aperta "sulla fiducia"
+  #   index: 0               # piu' display compatibili e nessun seriale / porta: quale usare (0 = il primo per nome di porta)
 
 refresh_s: 1.0         # ogni quanto si ridisegna e si inviano le differenze
 hot_reload: true       # rilegge config.yaml / pages.yaml / temi quando cambiano e li applica senza riavvio
@@ -85,6 +104,7 @@ alerts:
     temp: [75, 95]      # °C (cpu, gpu, ram): nessun rosso al primo valore, rosso pieno al secondo
     load: [85, 100]     # % di utilizzo (cpu, gpu, ram)
     strength: 0.5       # quanto diventa rosso al massimo (0..1)
+    style: background   # background | border | both. `border` disegna solo una cornice rossa sul bordo (decine di KB a scatto invece di ~175 KB): l'avviso leggero per un collegamento lento
     steps: 6
   # Le regole piu' vecchie: mostra una pagina per hold_s secondi finche' una condizione e' vera (chiavi: python -m displaymonitor --dump-sensors)
   pages: []

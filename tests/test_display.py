@@ -68,7 +68,8 @@ def test_rectangles_are_split_into_small_blocks():
     d = Display({"max_block_px": 12800})
     d._ser = FakeSerial()
     frame = np.random.default_rng(3).integers(0, 65535, (HW_H, HW_W), dtype=np.uint16)
-    d._send_rect(frame, 0, 0, HW_W, HW_H)
+    from displaymonitor import txsched
+    d._send_blocks(frame, [(txsched.CRITICAL, b) for b in txsched.split_rect((0, 0, HW_W, HW_H), d.max_px)], None)
     headers = d._ser.chunks[0::2]
     payloads = d._ser.chunks[1::2]
     assert len(headers) == len(payloads) > 1

@@ -44,6 +44,12 @@ If your own file is missing the example is used. Changes take effect after a res
 | `display.tile` / `merge_gap` | `2` / `4` | change‑detection tile and rectangle merging, in px |
 | `display.max_block_px` | `12800` | maximum pixels per bitmap command |
 | `display.refresh_band` | `8` | rows resent every frame, cycling (self‑healing); `0` = off |
+| `display.mode` | `normal` | `normal` or `slow`, see [Slow link profile](#slow-link-profile-and-transmission-budget) |
+| `display.tx_budget_bytes` | `0` (slow: `40960`) | bytes sent per refresh cycle; `0` = unlimited |
+| `display.bulk_px` | `6000` | a changed rectangle larger than this is a *background*: it goes out after the numbers and bars |
+| `display.slow.*` | see below | `noncritical_s` 10, `band_every` 5, `rotate_s` 30 |
+| `display.device.*` | the TURZX ids | which USB device is the display, see [Device profiles](#device-profiles) |
+| `alerts.tint.style` | `background` | `background`, `border` or `both` (see the red background section) |
 | `display.band_budget` | `24000` | the healing band is left out of a frame whose own changes exceed this many bytes (the panel is busy) |
 | `sensors.stale_s` | `6` | Windows: hardware values older than this many seconds are drawn dimmed with a *sensors stale* label (they become `--` after 20 s, when the sensor process is replaced) |
 | `display.flood_bytes` | `2200000` | recovery flood after an abnormal exit |
@@ -127,10 +133,64 @@ Cards are stacked from the top; `h` is the height in px (all heights + 8 px gaps
 
 `bar: {color: heat}` colours the bar with the same scheme as the text.
 
+## Slow link profile and transmission budget
+
+The panel takes ~165 KB/s: a whole-screen change is ~300 KB, about 2 seconds. Every frame, the driver keeps three things: the **newest frame** the app
+drew, the framebuffer it **believes the panel shows**, and the **work still pending**, which is not stored but always recomputed as the difference between the two.
+A newer frame therefore *replaces* whatever was not sent yet: the panel converges on the latest picture and never accumulates a backlog.
+
+Each cycle sends at most `display.tx_budget_bytes` (`0` = no limit, the default in `normal`), in this order:
+
+| Priority | What | Budgeted? |
+|---|---|---|
+| 0 critical | the first frame after a connect / reconnect, the "Ciao" and night-black frames, brightness | never: sent whole, at once |
+| 1 data | rectangles of changed *content* (digits, bars, text: tiles that changed strongly) up to `bulk_px` pixels | yes |
+| 2 bulk | subtle or large changes: a background tint step, a page switch | yes, after the data |
+| 3 healing | the self-healing band | only if nothing is pending and budget is left over (and the frame's own changes are below `band_budget`) |
+
+A block is a bitmap command of at most `max_block_px` pixels; a block is recorded as "sent" only after both of its writes returned. A serial error during a
+partial send forgets the framebuffer (a full refresh follows the reconnect) and arms the usual recovery flush.
+
+**`mode: slow`** is the profile for a slow or busy link. With the same pages it:
+* sets the budget to 40960 bytes per cycle unless `tx_budget_bytes` says otherwise (about a quarter of a second of link time, so commands stay responsive);
+* keeps CPU / GPU / RAM load, temperature, power, clock, VRAM and the tint inputs **live**, and refreshes everything else (network rates and sparklines, per-thread squares, disks, processes, uptime, ping, motherboard probes, weather) every `slow.noncritical_s` seconds (10): between refreshes the renderer gets the previous values, so nothing changes and nothing is sent. No extra polling, no animation;
+* sends the healing band only every `slow.band_every` cycles (5);
+* uses `slow.rotate_s` (30 s) as the page dwell of the automatic rotation, unless you set `rotate_s` yourself (an explicit value always wins).
+
+`normal` is untouched: no budget, everything live, one healing band per frame as before. The trade-off of `slow`: a full-screen change (a page switch, a tint step) arrives over several seconds instead of in one 2-second burst, and the less important readings can be up to 10 s old.
+
+**The red background in a slow link.** The quantised tint is kept as it was. A tint step is mostly *subtle* change, so under a budget it is sent as bulk, after the numbers, and never blocks commands.
+For a link where even that is too much set `alerts.tint.style: border`: only a red frame at the screen's edge changes (tens of KB per step instead of ~175 KB, no background redraw).
+`both` does the border and the wash. The ranges, `strength` and `steps` of `alerts.tint` work with every style.
+
+**Metrics** (tray line, web preview, `--debug`): bytes sent this cycle, the budget and how much of it was used, pending bytes with the estimated time to send them, and the number of frames that
+replaced unsent work (*coalesced*). The tray and web lines only show budget / pending / coalesced when a budget is in force or something is pending.
+
+## Device profiles
+
+By default the display is whatever shows up as VID `0x1A86`, PID `0x5722` or serial `USB35INCHIPSV2` (the tested TURZX unit). `display.device` narrows or changes that:
+
+```yaml
+display:
+  device:
+    profile: turzx-rev-a   # the only protocol implemented
+    vid: 0x1a86            # a clone speaking the same protocol, with other USB ids
+    pid: 0x5722
+    serial: ""             # only this serial number
+    port: ""               # only this port; it must still match the ids
+    index: 0               # several compatible displays and no serial / port: which one
+```
+
+Only ports whose USB ids match are ever opened: an unrelated serial device, or a `port:` that is not a compatible display, is refused (and why is logged once). With several compatible displays and no
+`serial` / `port` / `index`, the first by port name is used and a warning lists the candidates. **Limitation:** the Rev A protocol cannot be verified on the wire (this firmware stays silent to a HELLO),
+so a clone is trusted on its USB ids alone and must really speak the same protocol; other protocols are not supported (`profile` accepts only `turzx-rev-a`). Several panels at once are not supported.
+
 ## Safety nets
 
 * **A wrong setting never stops the program.** Numbers in `display:`, `refresh_s`, `rotate_s`, `peek_s` are range-checked: `tile` must divide 320 and 480 (1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 80, 160), `refresh_band` is 0–480, `max_block_px` 320–51200, `brightness` 0–100, `rotate` 1 or 3.
   A bad value is replaced by a safe one (on a hot reload: the current one is kept) and `config:` warnings go to `logs/displaymonitor.log`.
+* **A broken config / pages file never stops the start.** Invalid YAML, a root that is not a mapping, a section of the wrong type, a `pages:` list that is empty or has duplicate / missing ids: the program logs *what* is wrong
+  (`config.yaml: 'display' must be a mapping ...`) and starts with the included example for that file (in the language of your `config.yaml` when it is valid). **Your files are never modified.** On a hot reload the previous working configuration stays in force.
 * **A bad command is ignored**, not fatal: `--send brightness:abc` or `--send logo:` only leave a warning in the log.
 * **A frame that fails to render** (a typo in a page) is logged once every 30 s and the last picture stays; fixing the file recovers by itself.
 * **Files are written atomically** (`config/state.yaml`, the weather and update caches), and `--send` commands are picked up by renaming the inbox, so none is lost or read half-written.

@@ -29,5 +29,9 @@ Nothing prevents building them later; the notes say where the work would go.
 | **Scrolling history graphs** (CPU / GPU / memory as lines instead of meters) | TMOG's "Traces" skin | Not wanted: continuous motion means continuous traffic. The network card already has a sparkline; the same card kind could take other keys |
 | **Disk activity lights** (one blinking segment per drive) | TMOG's disk lights | A blink needs ~30 ms refreshes; the link and the 1 s refresh cannot show it properly |
 | **Full-screen temperature alarm** with the component's details | — | Built and removed: redrawing the screen for an alarm is too slow here. Replaced by the red background tint (`alerts.tint`) |
-| **Budgeted transmission scheduler** / "slow display" profile (priority queues, per-page refresh rates, partial frames) | — | A whole-screen change takes 1–2 s, which only happens at the tint's few steps. The cheap part exists: the self-healing band is skipped while a frame is busy (`display.band_budget`) |
-| **Several panels / device profiles** (choose by serial, VID / PID; other protocols) | — | Only one model is tested. Port discovery and the Rev A protocol are isolated in `display.py`, so a second driver with the same `show()` surface would plug in |
+
+## Done later, after all
+
+A **budgeted transmission scheduler** with priorities, frame coalescing and metrics, and the `display.mode: slow` profile (first sketched as "deliberately not planned", then built on request);
+**device profiles** (`display.device`: VID / PID / serial / port / index, never an unverified port); a **border-only light alert** (`alerts.tint.style`);
+a **safe cold start** from the included examples when a config file is broken. Several panels at once and other protocols are still not supported.

@@ -23,6 +23,24 @@ display:
   brightness: 100      # backlight in percent, 0-100 (100 = brightest); applied at every start
   tile: 2              # granularity (px) of the change detection
   merge_gap: 4         # merge changed rectangles closer than this many px
+  band_budget: 24000   # the healing band is left out of a frame whose own changes exceed this many bytes
+  # --- transmission scheduling (the link carries ~165 KB/s: a whole-screen change takes ~2 s) -------------------
+  mode: normal         # normal | slow. `slow` is the profile for a slow / busy link: a byte budget per cycle (data before backgrounds,
+                       # newer frames replace unsent work), non-critical readings refreshed every `slow.noncritical_s`, a healing band
+                       # every `slow.band_every` cycles, longer page dwell in auto-rotation. `normal` behaves exactly as before.
+  # tx_budget_bytes: 0 # bytes sent per refresh cycle; 0 = unlimited (the normal default). slow mode defaults to 40960 (~0.25 s of link time)
+  # bulk_px: 6000      # a rectangle larger than this many pixels is a "background" and goes out after the numbers and bars
+  # slow:
+  #   noncritical_s: 10  # network, disks, per-thread squares, uptime ... refresh at most this often (CPU / GPU / RAM stay live)
+  #   band_every: 5      # one healing-band row set every N cycles
+  #   rotate_s: 30       # seconds per page when auto-rotation is on and `rotate_s` below is not set
+  # --- which USB device is the display -----------------------------------------------------------------------------
+  # device:                  # the defaults are the tested TURZX unit: VID 0x1a86, PID 0x5722 / serial USB35INCHIPSV2
+  #   vid: 0x1a86            # a clone speaking the same protocol, with other USB ids: put them here
+  #   pid: 0x5722
+  #   serial: ""             # only the display with this serial number
+  #   port: ""               # only this port (COM3, /dev/ttyACM0); it must still match the ids: a port is never opened on trust
+  #   index: 0               # several compatible displays and no serial / port: which one (0 = first by port name)
 
 refresh_s: 1.0         # how often the frame is redrawn and the differences are sent
 home_page: overview    # the recap page, always shown
@@ -84,6 +102,7 @@ alerts:
     temp: [75, 95]      # °C (cpu, gpu, ram): no red at the first value, full red at the second
     load: [85, 100]     # % utilisation (cpu, gpu, ram)
     strength: 0.5       # how red it gets at full (0..1)
+    style: background   # background | border | both. `border` only draws a red frame at the screen's edge (tens of KB per step instead of ~175 KB): the light alert for a slow link
     steps: 6
   # The older rules: show a page for hold_s seconds while a condition holds (sensor keys: python -m displaymonitor --dump-sensors)
   pages: []

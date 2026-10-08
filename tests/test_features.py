@@ -474,7 +474,7 @@ def test_a_failing_frame_does_not_stop_the_loop(monkeypatch, tmp_path):
     monkeypatch.setattr(watchdog, "LOGS", str(tmp_path / "logs"))
     app.control_file, app.state_file = str(tmp_path / "control.cmd"), str(tmp_path / "state.yaml")
     monkeypatch.setattr(type(app.display), "connected", property(lambda self: True))
-    monkeypatch.setattr(app.display, "show", lambda frame: True, raising=False)
+    monkeypatch.setattr(app.display, "show", lambda frame, critical=False: True, raising=False)
     calls = {"n": 0}
 
     def boom(snap, now):

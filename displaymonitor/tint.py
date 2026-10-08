@@ -6,6 +6,8 @@
         temp: [75, 95]     # °C (cpu, gpu, ram): no red at the first value, full red at the second
         load: [85, 100]    # % utilisation (cpu, gpu, ram)
         strength: 0.5      # how red the background gets at full (0..1)
+        style: background  # background | border | both. `border` only draws a red frame at the screen's edge: a few KB per step instead of
+                           # redrawing the whole background (the light alert for a slow link)
         steps: 6           # the red comes in this many levels: every change redraws the whole screen (about 2 s on this link),
                            # so it is quantised and smoothed instead of following every spike
 
@@ -13,6 +15,7 @@ The tint only changes the colours of the background: no text, no layout, nothing
 """
 from __future__ import annotations
 
+STYLES = ("background", "border", "both")
 TEMP_KEYS = ("cpu_temp", "gpu_temp", "ram_temp")
 LOAD_KEYS = ("cpu_load", "gpu_load", "mem_pct")
 
@@ -39,6 +42,8 @@ class Tint:
         self.load = tuple(float(x) for x in c.get("load", (85, 100)))
         self.strength = max(0.0, min(1.0, float(c.get("strength", 0.5))))
         self.steps = max(1, int(c.get("steps", 6)))
+        style = str(c.get("style", "background")).lower()
+        self.style = style if style in STYLES else "background"
         if not self.enabled:
             self.level, self._smooth = 0, 0.0
 

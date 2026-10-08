@@ -15,7 +15,7 @@ import numpy as np
 import serial
 from serial.tools.list_ports import comports
 
-from . import validate
+from . import devices, txsched, validate
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +40,9 @@ class Display:
     def __init__(self, cfg: dict):
         st, warnings = validate.display_settings(cfg)
         validate.warn_all(warnings)
+        self.profile, dw = devices.parse_profile(st["device"])         # which USB device is "the display"
+        validate.warn_all(dw)
+        self._warned: set = set()
         self.rot_k = st["rotate"]                        # np.rot90 steps: 1 or 3 depending on how the panel is mounted
         self.brightness = st["brightness"]               # percent, 100 = brightest
         self.tile = st["tile"]
@@ -49,19 +52,26 @@ class Display:
         self.max_px = st["max_block_px"]
         self.reset_on_connect = st["reset_on_connect"]   # RESET (101) showed no visible effect: off
         self.flood_bytes = st["flood_bytes"]
+        self.mode, self.slow = st["mode"], st["slow"]    # normal | slow (see docs/CONFIGURATION.md)
+        self.tx_budget = st["tx_budget"]                 # bytes per refresh cycle, 0 = unlimited
+        self.bulk_px = st["bulk_px"]                     # rectangles larger than this many pixels are "bulk" (backgrounds), sent after the data
         self.needs_flood = False      # set when the last session may have ended mid-bitmap (hard kill, link error)
         self._band_y = 0
+        self._cycle = 0
         self._ser = None
-        self._prev = None
+        self._prev = None             # what the panel is believed to show: a region is copied in only after its bytes were written
+        self._pending_bytes = 0       # bytes of the newest frame still waiting to be sent (always derived from diff(_prev, newest frame))
         self.last_bytes = 0
         self.last_rects = 0
         self.last_ms = 0.0            # time spent sending the last frame
-        self.band_skipped = 0         # frames whose healing band was left out because the panel was busy
+        self.band_skipped = 0         # frames whose healing band was left out (panel busy / budget used / slow-mode cadence)
+        self.tx = txsched.new_metrics()
 
     def _settings(self) -> dict:
         return {"rotate": self.rot_k, "brightness": self.brightness, "tile": self.tile, "merge_gap": self.gap_tiles * self.tile,
                 "refresh_band": self.band, "band_budget": self.band_budget, "max_block_px": self.max_px,
-                "flood_bytes": self.flood_bytes, "reset_on_connect": self.reset_on_connect}
+                "flood_bytes": self.flood_bytes, "reset_on_connect": self.reset_on_connect, "bulk_px": self.bulk_px,
+                "mode": self.mode, "slow": self.slow, "tx_budget": self.tx_budget, "device": None}
 
     def configure(self, cfg: dict):
         """Apply display settings changed in config.yaml while running (hot reload). A wrong value keeps the current one.
@@ -71,6 +81,14 @@ class Display:
         validate.warn_all(warnings)
         self.rot_k, self.tile, self.band, self.band_budget, self.max_px = st["rotate"], st["tile"], st["refresh_band"], st["band_budget"], st["max_block_px"]
         self.gap_tiles = st["merge_gap"] // self.tile
+        self.mode, self.slow, self.tx_budget, self.bulk_px = st["mode"], st["slow"], st["tx_budget"], st["bulk_px"]
+        if "device" in (cfg or {}):
+            profile, dw = devices.parse_profile(st["device"])
+            validate.warn_all(dw)
+            if profile != self.profile:
+                self.profile, self._warned = profile, set()
+                if self._ser is not None:               # another display was asked for: reconnect on the next cycle
+                    self.disconnect()
         self.invalidate()                       # rotation / tile changes: redraw everything
 
     # -- connection -----------------------------------------------------------------------------
@@ -78,12 +96,10 @@ class Display:
     def connected(self) -> bool:
         return self._ser is not None
 
-    @staticmethod
-    def find_port():
-        for p in comports():
-            if p.serial_number == SERIAL_ID or (p.vid == VID and p.pid == PID):
-                return p.device
-        return None
+    def find_port(self):
+        """The port of the display described by `display.device` (default: VID 1A86, PID 5722 / serial USB35INCHIPSV2), or None.
+        Only ports whose USB ids match are ever opened."""
+        return devices.choose(comports(), self.profile, self._warned)
 
     def _open(self, port):
         ser = serial.Serial(port, 115200, timeout=1, write_timeout=10, rtscts=True)
@@ -197,37 +213,74 @@ class Display:
     def invalidate(self):
         self._prev = None
 
-    def show(self, frame: np.ndarray) -> bool:
-        """frame: (320, 480) landscape RGB565. Sends only what changed. Returns False if the link dropped."""
+    def show(self, frame: np.ndarray, critical: bool = False) -> bool:
+        """frame: (320, 480) landscape RGB565, the newest picture. Sends part of what differs from what the panel shows, within the
+        byte budget (see txsched.py); the rest stays pending and is recomputed against the next frame, so the panel converges on the
+        latest frame without a backlog. `critical` (the "Ciao" screen, night black ...) sends everything now, budget or not.
+        Returns False if the link dropped."""
         if not self.connected:
             return False
+        tx = self.tx
         try:
             t0 = time.time()
             hw = np.ascontiguousarray(np.rot90(frame, self.rot_k))      # (480, 320) portrait panel
             prev = self._prev
-            rects = [(0, 0, HW_W, HW_H)] if prev is None else self._diff(prev, hw)
-            if prev is not None and self.band:     # self-healing: also resend one band per frame, cycling over the screen ...
-                if sum(w * h * 2 for _, _, w, h in rects) <= self.band_budget:
-                    rects.append((0, self._band_y, HW_W, self.band))
-                    self._band_y = (self._band_y + self.band) % HW_H
-                else:                              # ... unless the panel is already busy with this frame's changes
-                    self.band_skipped += 1
-            self.last_rects, self.last_bytes = len(rects), 0
-            for (x, y, w, h) in rects:
-                self._send_rect(hw, x, y, w, h)
-            self._ser.flush()
-            self._prev = hw
+            self._cycle += 1
+            tx["cycles"] = self._cycle
+            self.last_rects, self.last_bytes = 0, 0
+            if prev is None or critical:                                 # full refresh: unbudgeted, then `_prev` is the whole frame
+                if prev is not None and self._pending_bytes:
+                    tx["coalesced"] += 1
+                tx["critical"] += 1
+                blocks = [(txsched.CRITICAL, b) for b in txsched.split_rect((0, 0, HW_W, HW_H), self.max_px)]
+                self._send_blocks(hw, blocks, None)
+                self._ser.flush()
+                self._prev = hw.copy()
+                self._pending_bytes, sent, rest, budget = 0, self.last_bytes, [], 0
+            else:
+                budget = self.tx_budget
+                if self._pending_bytes:                                  # the previous frame was not fully out: this one replaces it
+                    tx["coalesced"] += 1
+                if budget > 0:                                           # budgeted: separate the content from the subtle / large changes
+                    data, bulk = self._diff_classes(prev, hw)
+                    blocks = txsched.blocks_for(data, bulk, self.max_px)
+                    changed = sum(txsched.rect_bytes(r) for r in data + bulk)
+                else:                                                    # unlimited (normal mode): exactly the merged rectangles of old, top to bottom
+                    rects = self._diff(prev, hw)
+                    blocks = [(txsched.DATA, b) for r in rects for b in txsched.split_rect(r, self.max_px)]
+                    changed = sum(txsched.rect_bytes(r) for r in rects)
+                chosen, rest = txsched.take(blocks, budget)
+                self._send_blocks(hw, chosen, prev)                      # `prev` gains each block only after it was written
+                sent = self.last_bytes
+                self._pending_bytes = sum(txsched.rect_bytes(b) for _, b in rest)
+                if self.band:                                            # self-healing band: lowest priority, only with spare capacity
+                    band_bytes = HW_W * self.band * txsched.BYTES_PER_PX
+                    slow_skip = self.mode == "slow" and self._cycle % max(1, self.slow["band_every"]) != 0
+                    if (not rest and not slow_skip and changed <= self.band_budget and (budget <= 0 or sent + band_bytes <= budget)):
+                        blk = (0, self._band_y, HW_W, self.band)
+                        self._send_blocks(hw, [(txsched.HEALING, blk)], prev)
+                        self._band_y = (self._band_y + self.band) % HW_H
+                    else:
+                        self.band_skipped += 1
+                self._ser.flush()
+            tx.update(budget=budget, sent=self.last_bytes, pending=self._pending_bytes,
+                      used=(self.last_bytes / budget if budget else None), latency_s=txsched.latency_estimate(self._pending_bytes))
             self.last_ms = (time.time() - t0) * 1000
             return True
         except (serial.SerialException, OSError) as e:
             log.warning("display link lost: %s", e)
-            self.needs_flood = True        # we may have dropped mid-bitmap
-            self.disconnect()
+            self.needs_flood = True        # we may have dropped mid-bitmap: nothing about the panel's content is trusted any more
+            self._pending_bytes = 0
+            self.disconnect()              # (also forgets `_prev`, so the next connect starts with a full refresh)
             return False
 
-    def _diff(self, prev, cur):
+    def _changed_tiles(self, prev, cur):
         t = self.tile
-        d = (prev != cur).reshape(HW_H // t, t, HW_W // t, t).any(axis=(1, 3))
+        return (prev != cur).reshape(HW_H // t, t, HW_W // t, t).any(axis=(1, 3))
+
+    def _rects_from_mask(self, d):
+        """Boolean tile mask -> rectangles (row spans merged downwards, spans closer than merge_gap joined)."""
+        t = self.tile
         rects, open_ = [], {}
         for ty in range(HW_H // t):
             idx = np.flatnonzero(d[ty])
@@ -251,11 +304,36 @@ class Display:
         rects.sort(key=lambda r: (r[1], r[0]))
         return rects
 
-    def _send_rect(self, hw, x, y, w, h):
-        rows = max(1, self.max_px // w)            # keep every bitmap command <= max_px pixels
-        for y0 in range(y, y + h, rows):
-            bh = min(rows, y + h - y0)
-            data = np.ascontiguousarray(hw[y0:y0 + bh, x:x + w]).tobytes()
-            self._ser.write(_header(CMD_BITMAP, x, y0, x + w - 1, y0 + bh - 1))
+    def _diff(self, prev, cur):
+        """Every rectangle where `cur` differs from `prev`."""
+        return self._rects_from_mask(self._changed_tiles(prev, cur))
+
+    STRONG = 48                                   # per-channel change (0..255 scale) from which a tile counts as "content", not "tint"
+
+    def _diff_classes(self, prev, cur):
+        """(data, bulk) rectangles. A tile that changed by a lot (a digit, a bar) is data when its rectangle is small; the subtle
+        changes (a background tint step: a few levels per pixel) and anything large are bulk and go out after the data - even when
+        the data sits inside the tinted area, because the two are separate rectangles (the strong tiles are cut out of the weak ones)."""
+        changed = self._changed_tiles(prev, cur)
+        if not changed.any():
+            return [], []
+        a, b = prev.astype(np.int16), cur.astype(np.int16)
+        mag = np.maximum.reduce([np.abs((a >> 11) - (b >> 11)) * 8, np.abs(((a >> 5) & 63) - ((b >> 5) & 63)) * 4, np.abs((a & 31) - (b & 31)) * 8])
+        t = self.tile
+        strong = (mag >= self.STRONG).reshape(HW_H // t, t, HW_W // t, t).any(axis=(1, 3)) & changed
+        data, bulk = [], self._rects_from_mask(changed & ~strong)
+        for r in self._rects_from_mask(strong):
+            (data if r[2] * r[3] <= self.bulk_px else bulk).append(r)
+        return data, bulk
+
+    def _send_blocks(self, hw, blocks, prev):
+        """Write the blocks [(priority, (x, y, w, h))] (each already <= max_block_px). When `prev` is given, a block's pixels are copied into
+        it only after both of its writes returned: an error leaves `prev` untouched for that block (and the caller resets it)."""
+        for _prio, (x, y, w, h) in blocks:
+            data = np.ascontiguousarray(hw[y:y + h, x:x + w]).tobytes()
+            self._ser.write(_header(CMD_BITMAP, x, y, x + w - 1, y + h - 1))
             self._ser.write(data)
+            if prev is not None:
+                prev[y:y + h, x:x + w] = hw[y:y + h, x:x + w]
             self.last_bytes += len(data)
+            self.last_rects += 1

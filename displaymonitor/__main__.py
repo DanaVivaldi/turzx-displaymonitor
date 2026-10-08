@@ -109,7 +109,7 @@ def main():
         print("sent:", a.send)
         return
     setup_logging(a.debug, console=a.preview or a.dump_sensors or a.debug)
-    cfg, pages = load_config(examples=a.demo, lang=a.lang)
+    cfg, pages = load_config(examples=a.demo, lang=a.lang, fallback=True)      # a broken file starts the example instead of failing
     if a.rotate is not None:
         cfg["rotate_s"] = a.rotate
     if a.theme:

@@ -8,8 +8,11 @@ displaymonitor/
   app.py        main loop: config, page selection / alerts / tray commands, frame → display, clean‑exit marker
   sensors.py    LibreHardwareMonitor (pythonnet) + psutil + ping, polled at different rates, flat snapshot dict
   render.py     page renderer (Pillow, 3× supersampling): ring, cards, legend, colour scheme
-  display.py    USB display driver: port discovery, init, diff → rectangles → blocks, flood recovery
+  display.py    USB display driver: port discovery, init, desired / sent framebuffers, budgeted diff → blocks, flood recovery
   hwproc.py     the hardware sensors in a child process (a native crash in a driver cannot kill the program) + its supervisor
+  txsched.py    the transmission budget: blocks, priorities (critical / data / bulk / healing), `take(blocks, budget)`, latency estimate - pure functions
+  slowmode.py   `display.mode: slow`: which snapshot keys stay live and which refresh every few seconds
+  devices.py    the `display.device` profile: which serial port is the display (ids / serial / port / index), never an unverified port
   validate.py   range-checks the numeric settings (tile must divide 320 and 480, ...): a typo never stops the program
   fsutil.py     atomic file writes and the command-inbox swap
   watchdog.py   `--watchdog`: restart the program when it crashed / froze (heartbeat), unless it was quit on purpose

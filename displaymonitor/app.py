@@ -15,6 +15,7 @@ from .display import Display, rgb565
 from .render import Renderer
 from .schedule import night_active, night_brightness
 from .sensors import Sensors
+from .slowmode import SlowFilter
 from .tint import Tint
 from .session import SessionWatcher
 from . import units, validate
@@ -40,16 +41,41 @@ def example_path(name: str, lang: str | None = None) -> str:
     return os.path.join(ROOT, "config", f"{stem}.example.yaml")
 
 
-def load_config(examples: bool = False, lang: str | None = None):
+def _parse_yaml(path: str, label: str, check):
+    """Read + parse + structurally check one config file. Raises validate.ConfigError with a message that says what is wrong."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except FileNotFoundError:
+        raise validate.ConfigError(f"{label}: file not found ({path})") from None
+    except yaml.YAMLError as e:
+        first = " ".join(str(e).split())[:240]
+        raise validate.ConfigError(f"{label}: invalid YAML - {first}") from None
+    except (OSError, UnicodeDecodeError) as e:
+        raise validate.ConfigError(f"{label}: cannot be read - {e}") from None
+    return check(data if data is not None else ({} if label == "config.yaml" else None))
+
+
+def load_config(examples: bool = False, lang: str | None = None, fallback: bool = False):
     """config/config.yaml and config/pages.yaml are your own (git-ignored) files; if they do not exist the
     shipped examples are used, so a fresh checkout works out of the box (examples=True forces them).
-    `lang` picks the language pack ("en" or "it") when an example is used."""
-    def read(name):
+    `lang` picks the language pack ("en" or "it") when an example is used.
+
+    A file that is invalid YAML or has the wrong shape raises validate.ConfigError (a hot reload then keeps the previous configuration).
+    With fallback=True (the cold start) the shipped example is used instead, with a clear error in the log: your file is never modified."""
+    def read(name, check, hint):
         mine = os.path.join(ROOT, "config", name)
-        path = mine if os.path.exists(mine) and not examples else example_path(name, lang)
-        with open(path, encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    return read("config.yaml"), read("pages.yaml")
+        if os.path.exists(mine) and not examples:
+            try:
+                return _parse_yaml(mine, name, check)
+            except validate.ConfigError as e:
+                if not fallback:
+                    raise
+                log.error("%s - starting with the included example instead (your file is untouched; fix it and the program picks it up by itself)", e)
+        return _parse_yaml(example_path(name, hint or lang), name, check)
+    cfg = read("config.yaml", validate.check_config, lang)
+    pages = read("pages.yaml", validate.check_pages, lang or (cfg.get("language") if isinstance(cfg, dict) else None))
+    return cfg, pages
 
 
 def init_language_pack(lang: str, force: bool = False) -> list[str]:
@@ -145,6 +171,8 @@ class App:
         self.commands = CommandQueue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<0-100> | away:<event> | web:on|off|toggle
         self.lang = cfg.get("language", "en")
         self.tint = Tint(cfg.get("alerts"))
+        self.slow = SlowFilter(self.display.slow["noncritical_s"]) if self.display.mode == "slow" else None
+        self._last_kind = None
         self.base_brightness = self._cfg_brightness = self.display.brightness   # what the user asked for; the night schedule overrides it
         self.away: str | None = None            # lock | sleep | shutdown while the "Ciao" screen is shown
         self.bye_done = threading.Event()       # set once the shutdown frame has been sent
@@ -168,7 +196,7 @@ class App:
         self.peek_until = 0.0                  # a page picked from the tray stays visible until then, then back home
         self.pinned = False                    # stay on the picked page indefinitely
         self.rotate = top["rotate_s"] > 0   # automatic rotation (off by default: one recap page)
-        self.rotate_s = top["rotate_s"] or 12.0   # seconds per page when rotation is switched on
+        self.rotate_s = top["rotate_s"] or (self.display.slow["rotate_s"] if self.display.mode == "slow" else 12.0)   # seconds per page when rotation is switched on
         self.alert_page = None
         self.alert_until = 0.0
         self._page_since = time.time()
@@ -203,7 +231,7 @@ class App:
         self.refresh_s = top["refresh_s"]
         self.stay_on_selected = bool(cfg.get("stay_on_selected", True))
         self.peek_s = top["peek_s"]
-        self.rotate_s = top["rotate_s"] or 12.0
+        self.rotate_s = top["rotate_s"] or (self.display.slow["rotate_s"] if self.display.mode == "slow" else 12.0)
         self._config_logos = tuple(renderer.t["logos"])
         self._load_state()
         self.display.configure(cfg.get("display", {}))
@@ -211,6 +239,7 @@ class App:
             self.base_brightness = self._cfg_brightness = Display._clamp_pct(cfg["display"]["brightness"])
         self.lang = cfg.get("language", "en")
         self.tint.configure(cfg.get("alerts"))
+        self.slow = SlowFilter(self.display.slow["noncritical_s"]) if self.display.mode == "slow" else None
         self.sensors.set_language(cfg)
         self._sync_web()
         log.info("configuration reloaded (%s): %d pages, theme preset %s", reason, len(pages), (cfg.get("theme") or {}).get("preset"))
@@ -388,7 +417,7 @@ class App:
             return Image.new("RGB", (480, 320), (0, 0, 0)), "night"
         idx = self._current(snap)
         self.tint.update(snap, now)
-        return self.renderer.render(self.pages[idx], snap, idx, len(self.pages), self.tint.alpha), "page"
+        return self.renderer.render(self.pages[idx], snap, idx, len(self.pages), self.tint.alpha, self.tint.style), "page"
 
     def _away_frame(self, away_cfg: dict):
         default = "Ciao" if self.lang == "it" else "Bye"
@@ -409,7 +438,15 @@ class App:
         d = self.diag
         if not d:
             return "--"
-        return f"{d['kbps']:.1f} KB/s · send {d['send_ms']:.0f} ms · render {d['render_ms']:.0f} ms · {d['rects']} rect"
+        text = f"{d['kbps']:.1f} KB/s · send {d['send_ms']:.0f} ms · render {d['render_ms']:.0f} ms · {d['rects']} rect"
+        tx = self.display.tx
+        if tx["budget"]:                                     # a budget is in force (slow mode, or tx_budget_bytes): show how it is going
+            text += f" · budget {tx['sent'] / 1024:.0f}/{tx['budget'] / 1024:.0f} KB"
+        if tx["pending"]:
+            text += f" · pending {tx['pending'] / 1024:.0f} KB (~{tx['latency_s']:.1f} s)"
+        if tx["coalesced"] and (tx["budget"] or tx["pending"]):
+            text += f" · {tx['coalesced']} coalesced"
+        return text
 
     def _update_diag(self, t0: float, render_ms: float, snap: dict):
         dt = max(0.05, t0 - self._diag_t) if self._diag_t else self.refresh_s
@@ -417,7 +454,7 @@ class App:
         kbps = self.display.last_bytes / 1024 / dt
         old = self.diag.get("kbps", kbps)
         self.diag = {"kbps": 0.8 * old + 0.2 * kbps, "send_ms": self.display.last_ms, "render_ms": render_ms, "bytes": self.display.last_bytes,
-                     "rects": self.display.last_rects, "band_skipped": self.display.band_skipped, "errors": self.errors,
+                     "rects": self.display.last_rects, "band_skipped": self.display.band_skipped, "errors": self.errors, "tx": dict(self.display.tx),
                      "hw_age_s": snap.get("hw_age_s")}
 
     # -- run ------------------------------------------------------------------------------------
@@ -471,12 +508,17 @@ class App:
                     if self.display.connected or self.web.running or self.away == "shutdown":
                         snap = self.sensors.snapshot()
                         snap["update_available"] = self.updates.available
+                        if self.slow is not None:                # slow mode: only the critical readings are live
+                            snap = self.slow.apply(snap, t0)
                         img, kind = self._compose(snap, t0)
                         render_ms = (time.time() - t0) * 1000
                         self._apply_brightness(kind)
                         self.last_frame, self.frame_seq = img, self.frame_seq + 1
                         if self.display.connected:
-                            self.display.show(rgb565(img))
+                            # the "Ciao" / night-black frames are critical: sent whole, at once, ahead of any budget (on the change, not every cycle)
+                            critical = kind in ("away", "night") and kind != self._last_kind
+                            self.display.show(rgb565(img), critical=critical)
+                        self._last_kind = kind
                         self._update_diag(t0, render_ms, snap)
                         log.debug("%s: %d rects, %d bytes, %.0f ms", kind, self.display.last_rects, self.display.last_bytes,
                                   (time.time() - t0) * 1000)

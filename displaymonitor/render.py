@@ -478,10 +478,11 @@ class Renderer:
             self._tint_cache[key] = img
         return img
 
-    def render(self, page: dict, snap: dict, index: int, total: int, tint: float = 0.0) -> Image.Image:
+    def render(self, page: dict, snap: dict, index: int, total: int, tint: float = 0.0, tint_style: str = "background") -> Image.Image:
         t = self.t
         img = self._background_for(page.get("logos"))      # a page may carry its own two logos
-        img = (self._reddened(img, tint) if tint > 0 else img).copy()
+        wash = tint if tint_style in ("background", "both") else 0.0
+        img = (self._reddened(img, wash) if wash > 0 else img).copy()
         cards = page.get("cards", [])
         hs = [c.get("h", 70) for c in cards]
         gap, k = 8.0, 1.0
@@ -534,6 +535,11 @@ class Renderer:
             d.ellipse(box(x - 3, 309, x + 3, 315), fill=t["cyan"] if i == index else t["track"])
         self.draw_text(d, 14, 312, f"{index + 1} / {total}", 9.5, t["dim"], "lm")
         self._faded = False
+        if tint > 0 and tint_style in ("border", "both"):       # the light alert: only the screen's edge changes colour
+            level = min(1.0, tint / 0.5)
+            red = lerp(t["track"], t.get("tint_color", (150, 8, 18)), level)
+            red = lerp(red, (235, 40, 50), level * 0.7)
+            d.rectangle(box(0.5, 0.5, W - 0.5, H - 0.5), outline=red, width=sc(3))
         if stale:
             self.draw_text(d, W - 12, 312, f"sensors stale {snap.get('hw_age_s') or 0:.0f} s", 9.5, t["amber"], "rm")
         elif snap.get("update_available"):

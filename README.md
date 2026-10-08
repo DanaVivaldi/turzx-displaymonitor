@@ -37,6 +37,7 @@ for **Windows 10/11**. It replaces the vendor's `UsbMonitor.exe` with a small Py
 * **Night schedule**: dim the screen, or switch it off, between two times.
 * **"Ciao" screen**: when the PC locks, sleeps, shuts down or you sign out the display shows a big word on your theme's background instead of a frozen page.
 * **Local web preview** with page buttons (tray tick, off by default, local only unless you set a token).
+* **Slow-link friendly**: a transmission budget (numbers first, backgrounds after, newer frames replace unsent work), an optional `display.mode: slow` profile, a light border-only alert, a safe start from the included examples when a config file is broken, and selectable USB device profiles — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#slow-link-profile-and-transmission-budget).
 * **Update check** against this repository (`--check-update` / `--update`; one GET, nothing sent, can be disabled).
 * **Windows, Linux and macOS** — same pages and features; see [docs/PLATFORMS.md](docs/PLATFORMS.md) for what each platform can read.
 * **Hot reload**: save `config.yaml`, `pages.yaml` or a theme and the display updates by itself, no restart (a broken file is reported in the log and the previous configuration is kept).

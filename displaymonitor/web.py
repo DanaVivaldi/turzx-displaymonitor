@@ -184,4 +184,5 @@ class WebPreview:
         a = self.app
         return {"pages": [{"id": p["id"], "title": str(p.get("title", p["id"])).title()} for p in a.pages], "index": a.index,
                 "brightness": a.display.brightness, "version": __version__, "update": a.updates.available if a.updates else None,
-                "diag": a.diag_text() if hasattr(a, "diag_text") else ""}
+                "diag": a.diag_text() if hasattr(a, "diag_text") else "",
+                "tx": dict(getattr(getattr(a, "display", None), "tx", {}) or {})}

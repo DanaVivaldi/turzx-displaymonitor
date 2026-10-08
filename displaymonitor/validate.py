@@ -10,6 +10,7 @@ from math import gcd
 
 log = logging.getLogger(__name__)
 HW_W, HW_H = 320, 480
+MODES = ("normal", "slow")
 TILES = tuple(t for t in range(1, gcd(HW_W, HW_H) + 1) if HW_W % t == 0 and HW_H % t == 0)      # 1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 80, 160
 
 
@@ -42,7 +43,27 @@ def display_settings(cfg: dict | None, fallback: dict | None = None) -> tuple[di
         "band_budget": int(number(cfg.get("band_budget"), fb.get("band_budget", 24_000), 0, 10_000_000, int, "display.band_budget", w)),
         "merge_gap": int(number(cfg.get("merge_gap"), fb.get("merge_gap", 4), 0, 160, int, "display.merge_gap", w)),
         "reset_on_connect": bool(cfg.get("reset_on_connect", fb.get("reset_on_connect", False))),
+        "bulk_px": int(number(cfg.get("bulk_px"), fb.get("bulk_px", 6000), 100, 153_600, int, "display.bulk_px", w)),
     }
+    mode = str(cfg.get("mode", fb.get("mode", "normal")) or "normal").lower()
+    if mode not in MODES:
+        w.append(f"display.mode: {mode!r} is not one of {', '.join(MODES)}, using {fb.get('mode', 'normal')}")
+        mode = fb.get("mode", "normal")
+    out["mode"] = mode
+    slow = cfg.get("slow") if isinstance(cfg.get("slow"), dict) else {}
+    fbs = fb.get("slow", {})
+    if cfg.get("slow") not in (None, {}) and not isinstance(cfg.get("slow"), dict):
+        w.append("display.slow must be a mapping, using the defaults")
+    out["slow"] = {
+        "noncritical_s": number(slow.get("noncritical_s"), fbs.get("noncritical_s", 10.0), 1.0, 600.0, float, "display.slow.noncritical_s", w),
+        "band_every": int(number(slow.get("band_every"), fbs.get("band_every", 5), 1, 1000, int, "display.slow.band_every", w)),
+        "rotate_s": number(slow.get("rotate_s"), fbs.get("rotate_s", 30.0), 5.0, 86400.0, float, "display.slow.rotate_s", w),
+    }
+    # bytes per refresh cycle: 0 = unlimited (the normal mode's default), the slow mode defaults to ~0.25 s of link time
+    default_budget = 0 if mode == "normal" else 40_960
+    out["tx_budget"] = int(number(cfg.get("tx_budget_bytes"), fb.get("tx_budget", default_budget) if "tx_budget_bytes" in cfg else default_budget,
+                                  0, 50_000_000, int, "display.tx_budget_bytes", w))
+    out["device"] = cfg.get("device") if "device" in cfg else fb.get("device")
     if out["rotate"] == 2:
         w.append("display.rotate: 2 is not supported (the panel is kept in portrait), using 1")
         out["rotate"] = 1
@@ -67,3 +88,43 @@ def top_level(cfg: dict | None) -> tuple[dict, list[str]]:
 def warn_all(warnings: list[str]):
     for msg in warnings:
         log.warning("config: %s", msg)
+
+
+# -- structure of config.yaml / pages.yaml ------------------------------------------------------------
+class ConfigError(ValueError):
+    """config.yaml / pages.yaml is unreadable or has the wrong shape. The message says what and where."""
+
+
+DICT_SECTIONS = ("display", "theme", "layout", "sensors", "network", "night", "away", "web", "updates", "weather")
+
+
+def check_config(cfg) -> dict:
+    """config.yaml must be a mapping whose sections are mappings (`alerts` may also be the older list). Returns it, or raises ConfigError."""
+    if cfg is None:
+        return {}
+    if not isinstance(cfg, dict):
+        raise ConfigError(f"config.yaml must be a mapping of settings at the top level, found {type(cfg).__name__}")
+    for key in DICT_SECTIONS:
+        if cfg.get(key) is not None and not isinstance(cfg[key], dict):
+            raise ConfigError(f"config.yaml: '{key}' must be a mapping, found {type(cfg[key]).__name__}")
+    if cfg.get("alerts") is not None and not isinstance(cfg["alerts"], (dict, list)):
+        raise ConfigError(f"config.yaml: 'alerts' must be a mapping or a list, found {type(cfg['alerts']).__name__}")
+    return cfg
+
+
+def check_pages(data) -> dict:
+    """pages.yaml: {pages: [ {id, ring?, cards?}, ... ]} with at least one page and unique ids. Returns it, or raises ConfigError."""
+    if not isinstance(data, dict) or not isinstance(data.get("pages"), list) or not data["pages"]:
+        raise ConfigError("pages.yaml must contain a non-empty 'pages:' list")
+    seen = set()
+    for i, p in enumerate(data["pages"], 1):
+        if not isinstance(p, dict) or p.get("id") in (None, ""):
+            raise ConfigError(f"pages.yaml: page #{i} must be a mapping with an 'id'")
+        if str(p["id"]) in seen:
+            raise ConfigError(f"pages.yaml: duplicate page id '{p['id']}'")
+        seen.add(str(p["id"]))
+        if p.get("cards") is not None and (not isinstance(p["cards"], list) or not all(isinstance(c, dict) for c in p["cards"])):
+            raise ConfigError(f"pages.yaml: page '{p['id']}': 'cards' must be a list of mappings")
+        if p.get("ring") is not None and not isinstance(p["ring"], dict):
+            raise ConfigError(f"pages.yaml: page '{p['id']}': 'ring' must be a mapping")
+    return data
