@@ -76,17 +76,15 @@ away:
   text: "Bye"
   subtitle: true        # a small line under it: "screen locked", "sleeping", "shutting down"
 
-# Temperature alarm: when a component goes above its limit the whole screen turns into an alarm with its details
-# (name, temperature, load, power, fan ...). It ends once the part is `hysteresis` degrees below the limit again.
+# Red background: as the CPU / GPU / RAM temperatures or utilisation climb, the background of the screen turns red.
+# Only its colours change (nothing moves), and it comes in `steps` quantised levels, smoothed, because every change redraws the screen.
 alerts:
-  temperature:
+  tint:
     enabled: true
-    threshold: 85       # °C, for every component ...
-    # thresholds: {cpu: 90, gpu: 83, ram: 60, disk: 65, mb: 70}    # ... unless set here
-    hysteresis: 3
-    min_show_s: 15
-    rotate_s: 6         # several parts too hot at once: they take turns
-    wake: true          # backlight to 100 % while the alarm is shown, even during the night schedule
+    temp: [75, 95]      # °C (cpu, gpu, ram): no red at the first value, full red at the second
+    load: [85, 100]     # % utilisation (cpu, gpu, ram)
+    strength: 0.5       # how red it gets at full (0..1)
+    steps: 6
   # The older rules: show a page for hold_s seconds while a condition holds (sensor keys: python -m displaymonitor --dump-sensors)
   pages: []
   #  - {page: memory, when: "mem_pct is not None and mem_pct >= 92", hold_s: 30}

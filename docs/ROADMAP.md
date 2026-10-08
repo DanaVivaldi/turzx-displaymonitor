@@ -14,6 +14,6 @@ Gathered from looking at the other open projects for these displays (see `THIRD_
 ## Done (kept here so the origin of the idea is not lost)
 
 Night schedule (igam3-screen), lock / shutdown screen (igam3-screen, Bezel), local web preview (usb-lcd-dashboard, igam3-screen, Rizplay),
-hot reload and the weather page, dynamic temperature alarm, update check, Linux / macOS support, a no-Python installer (`scripts/get.ps1` / `get.sh`).
+hot reload and the weather page, red background on heat / load (a full-screen alarm was tried and dropped: too slow to redraw), update check, Linux / macOS support, a no-Python installer (`scripts/get.ps1` / `get.sh`).
 A frozen single-file `.exe` (PyInstaller) is still open: it needs code signing to avoid SmartScreen warnings, which is why the downloader scripts
 install a real Python instead.

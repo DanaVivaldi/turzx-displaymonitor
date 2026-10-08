@@ -32,14 +32,16 @@ pages:
         line2: "{cpu_power:.0f} W · {cpu_clock:.2f} GHz"
     cards:
       - kind: main
-        h: 78
+        h: 92
         title: "GPU · {gpu_short}"
         big: {text: "{gpu_load:.0f}%", value: gpu_load}
         mid: {text: "{gpu_temp:.0f}°C", value: gpu_temp}
         right: ["{gpu_power:.0f} W", "{gpu_vram_used:.1f} / {gpu_vram_total:.0f} GB"]
-        bar: {value: gpu_load, max: 100, color: heat}
+        bars:
+          - {label: GPU, value: gpu_load, max: 100, color: heat}
+          - {label: VRAM, value: gpu_vram_pct, max: 100, color: heat}
       - kind: main
-        h: 66
+        h: 62
         title: RAM
         big: {text: "{mem_pct:.0f}%", value: mem_pct}
         mid: {text: "{ram_temp:.0f}°C", value: ram_temp}      # RAM module temperature (needs sensors.ram_temp: true)

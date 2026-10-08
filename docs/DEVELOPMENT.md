@@ -12,7 +12,7 @@ displaymonitor/
   hwproc.py     the hardware sensors in a child process (a native crash in a driver cannot kill the program) + its supervisor
   watchdog.py   `--watchdog`: restart the program when it crashed / froze (heartbeat), unless it was quit on purpose
   sensors_posix.py  Linux / macOS backend (psutil + hwmon + nvidia-smi); pure parsers are unit-tested with fake data
-  alerts.py     the full-screen temperature alarm: thresholds, hysteresis, rotation, the detail rows per component
+  tint.py       the red background: worst of six readings, smoothed and quantised
   schedule.py   night window (wraps over midnight) and its brightness
   session.py    lock / unlock / sleep / shutdown events (Windows window messages, Linux loginctl, macOS Quartz) -> the "Ciao" screen
   web.py        local web preview (stdlib http.server): frame, state, whitelisted commands, Host / token checks

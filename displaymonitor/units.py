@@ -1,4 +1,4 @@
-"""Temperature unit (°C / °F). Everything inside the program stays in °C (colour thresholds, alarms, sensors): values are converted
+"""Temperature unit (°C / °F). Everything inside the program stays in °C (colour thresholds, the red background, sensors): values are converted
 only when they are turned into text, so `temperature_unit: fahrenheit` never changes a limit or a colour."""
 import re
 

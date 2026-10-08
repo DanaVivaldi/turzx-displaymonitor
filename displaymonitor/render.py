@@ -216,6 +216,7 @@ class Renderer:
             self.ring_c, self.rs = (122, 182), float(lc.get("ring_scale", 1.15))
             self.cards_top, self.cards_bottom, self.legend_y, self.stretch = 10, 300, 8, True
         self._bg_cache = {}
+        self._tint_cache = {}
         self._bg = self._background_for(None)
         self.update_text = None           # set by the app: shown small at the bottom-right when a newer version exists
 
@@ -405,7 +406,7 @@ class Renderer:
 
     def _background_for(self, logos, decor=True):
         """Static background (picture, glow, brackets, logos). `logos` = a page's own pair, or None for the theme's pair; cached.
-        decor=False leaves out the ring's glow, backdrop and disc (the message and alarm screens)."""
+        decor=False leaves out the ring's glow, backdrop and disc (the message screen)."""
         key = (tuple(str(x) if not isinstance(x, dict) else repr(sorted(x.items())) for x in logos) if logos else None, decor)
         if key not in self._bg_cache:
             self._bg_cache[key] = self._build_background(logos, decor)
@@ -463,9 +464,21 @@ class Renderer:
         return img
 
     # -- page -----------------------------------------------------------------------------------
-    def render(self, page: dict, snap: dict, index: int, total: int) -> Image.Image:
+    def _reddened(self, bg: Image.Image, alpha: float) -> Image.Image:
+        """The static background with `alpha` of red mixed in (cached: the app only asks for a handful of levels)."""
+        key = (id(bg), round(alpha, 3))
+        img = self._tint_cache.get(key)
+        if img is None:
+            if len(self._tint_cache) > 24:
+                self._tint_cache.clear()
+            img = Image.blend(bg, Image.new("RGB", bg.size, self.t.get("tint_color", (150, 8, 18))), alpha)
+            self._tint_cache[key] = img
+        return img
+
+    def render(self, page: dict, snap: dict, index: int, total: int, tint: float = 0.0) -> Image.Image:
         t = self.t
-        img = self._background_for(page.get("logos")).copy()      # a page may carry its own two logos
+        img = self._background_for(page.get("logos"))      # a page may carry its own two logos
+        img = (self._reddened(img, tint) if tint > 0 else img).copy()
         cards = page.get("cards", [])
         hs = [c.get("h", 70) for c in cards]
         gap, k = 8.0, 1.0
@@ -544,58 +557,6 @@ class Renderer:
         img = self._glow_text(img, (W / 2, H / 2 - 8), text, px, t["white"], t["cyan"], blur=9)
         if sub:
             self.draw_text(ImageDraw.Draw(img), W / 2, H / 2 + 52, sub, 14, t["dim"], "mm")
-        return img.resize((W, H), Image.LANCZOS)
-
-    def render_alert(self, a: dict, blink: bool = False, snap: dict | None = None) -> Image.Image:
-        """Full-screen overheating alarm for the component described by `a` (see alerts.TempAlarm.update)."""
-        t = self.t
-        red = t["heat"][-1]
-        img = self._background_for(None, decor=False).copy()
-        tint = Image.new("RGB", img.size, (150, 6, 14) if blink else (96, 4, 10))
-        img = Image.blend(img, tint, 0.62 if blink else 0.5)
-        ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        od = ImageDraw.Draw(ov)
-        od.rounded_rectangle(box(190 + 52, 66, W - 12, 236), radius=sc(10), fill=(0, 0, 0, 120), outline=(*red, 255), width=sc(1))
-        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
-        d = ImageDraw.Draw(img)
-        # pulsing frame
-        d.rounded_rectangle(box(3, 3, W - 3, H - 3), radius=sc(10), outline=red if blink else lerp(red, (0, 0, 0), 0.5), width=sc(5 if blink else 3))
-        # warning triangle + title
-        tri = [(30, 14), (54, 54), (6, 54)]
-        d.polygon([(sc(x), sc(y)) for x, y in tri], fill=red, outline=(255, 255, 255), width=sc(1.5))
-        self.draw_text(d, 30, 44, "!", 26, (255, 255, 255), "mm", bold=True)
-        title = f"{a['title']} · {a['label']}"
-        self.draw_text(d, 68, 26, title, 19 if len(title) < 26 else 15, (255, 255, 255), "lm", bold=True)
-        self.draw_text(d, 68, 47, a["name"], 12, (255, 205, 205), "lm")
-        # giant temperature with a halo
-        temp = f"{a.get('temp_show', a['temp']):.0f}"
-        w_num = self.font(96, True).getlength(temp) / S
-        img = self._glow_text(img, (14 + w_num / 2, 128), temp, 96, (255, 255, 255), red, blur=10)
-        d = ImageDraw.Draw(img)
-        self.draw_text(d, 18 + w_num, 100, a.get("unit", "°C"), 30, (255, 255, 255), "lm", bold=True)
-        self.draw_text(d, 18, 192, a["over"], 14, (255, 210, 120), "lm", bold=True)
-        self.draw_text(d, 18, 210, a["limit_text"], 11, (255, 205, 205), "lm")
-        # gauge: 0..120 °C with the limit marked
-        gx0, gx1, gy = 18, 232, 232
-        top = max(120.0, a["limit"] + 25, a["temp"] + 5)
-        d.rounded_rectangle(box(gx0, gy, gx1, gy + 9), radius=sc(4.5), fill=(30, 6, 10))
-        frac = max(0.0, min(1.0, a["temp"] / top))
-        d.rounded_rectangle(box(gx0, gy, gx0 + max(9, (gx1 - gx0) * frac), gy + 9), radius=sc(4.5), fill=red)
-        mx = gx0 + (gx1 - gx0) * a["limit"] / top
-        d.line([sc(mx), sc(gy - 4), sc(mx), sc(gy + 13)], fill=(255, 255, 255), width=sc(1.6))
-        # details
-        rows = a.get("rows", [])
-        y0 = 80
-        pitch = min(34.0, 150.0 / max(1, len(rows)))
-        for i, (label, value) in enumerate(rows):
-            y = y0 + i * pitch + pitch / 2
-            self.draw_text(d, 252 + 10, y - 7, str(label), 10.5, (255, 190, 190), "lm")
-            self.draw_text(d, W - 24, y + 5, str(value), 17 if pitch > 28 else 14, (255, 255, 255), "rm", bold=True)
-        # footer: which alarm of how many + clock
-        if a.get("count", 1) > 1:
-            self.draw_text(d, 18, 300, f"{a['pos']} / {a['count']}", 11, (255, 205, 205), "lm")
-        if snap and snap.get("time"):
-            self.draw_text(d, W - 18, 300, str(snap["time"]), 12, (255, 205, 205), "rm")
         return img.resize((W, H), Image.LANCZOS)
 
     # -- ring -----------------------------------------------------------------------------------
@@ -725,8 +686,18 @@ class Renderer:
             self.draw_text(d, CARD_IN1, y + 12 * k, rs, 11 * fk, rc, "ra")
             rs, rc = self.text_of(right[1], snap, t["dim"])
             self.draw_text(d, CARD_IN1, y + 36 * k, rs, 11 * fk, rc, "rm")
-        if "bar" in card:
-            self._bar(d, card["bar"], CARD_IN0, CARD_IN1, y + h - 16 * k, snap, height=6 * fk)
+        bars = card.get("bars") or ([card["bar"]] if "bar" in card else [])
+        if len(bars) == 1:
+            self._bar(d, bars[0], CARD_IN0, CARD_IN1, y + h - 16 * k, snap, height=6 * fk)
+        else:                                      # several bars, stacked from the bottom up, each with a small label
+            hgt, pitch = 5 * fk, 10.5 * k
+            for i, b in enumerate(bars):
+                by = y + h - 16 * k - (len(bars) - 1 - i) * pitch
+                x0 = CARD_IN0
+                if b.get("label"):
+                    self.draw_text(d, CARD_IN0, by + hgt / 2, self.fmt(b["label"], snap), 8.5 * fk, t["dim"], "lm")
+                    x0 = CARD_IN0 + 34 * fk
+                self._bar(d, b, x0, CARD_IN1, by, snap, height=hgt)
 
     def _card_stats(self, d, card, y, h, snap):
         t = self.t

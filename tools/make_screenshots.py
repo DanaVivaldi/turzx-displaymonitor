@@ -86,16 +86,15 @@ def main():
     montage(ths, labels=names, label_h=22).save(os.path.join(out, "themes.png"))
     print("themes.png:", ", ".join(names))
 
-    # the full-screen screens: temperature alarm (two parts too hot, they take turns) and the "Ciao" screen
-    from displaymonitor.alerts import TempAlarm
+    # the red background (cool, warm, hot) and the "Ciao" screen
     r = Renderer({"preset": "neon", "logos": ["intel", "rog"]}, {"header": False})
-    hot = {**snap, "cpu_temp": 92.0, "cpu_temp_max": 95.0, "gpu_temp": 87.0}
-    alarm = TempAlarm({"temperature": {"threshold": 85}}, "en")
-    first = alarm.update(hot, 0.0)
-    r.render_alert(first, True, hot).save(os.path.join(out, "alarm.png"))
+    hot = {**snap, "cpu_temp": 92.0, "cpu_load": 98.0, "gpu_temp": 84.0, "gpu_load": 97.0, "mem_pct": 88.0}
+    page = plist[0]
+    tints = [r.render(page, snap, 0, len(plist), 0.0), r.render(page, hot, 0, len(plist), 0.25), r.render(page, hot, 0, len(plist), 0.5)]
+    montage(tints).save(os.path.join(out, "tint.png"))
     r.render_message("Bye", "screen locked").save(os.path.join(out, "away.png"))
-    montage([r.render_alert(first, True, hot), r.render_message("Bye", "screen locked")]).save(os.path.join(out, "alarm_and_away.png"))
-    print("alarm.png, away.png, alarm_and_away.png")
+    montage([tints[2], r.render_message("Bye", "screen locked")]).save(os.path.join(out, "tint_and_away.png"))
+    print("tint.png, away.png, tint_and_away.png")
 
 
 if __name__ == "__main__":

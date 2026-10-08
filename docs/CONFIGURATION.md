@@ -34,7 +34,7 @@ If your own file is missing the example is used. Changes take effect after a res
 |---|---|---|
 | `language` | `en` | `en` or `it`: tray menu (and the date names unless `date_language` is set) |
 | `date_language` | = `language` | `en` or `it`: day / month names of the date (`Sat 03 Dec` / `sab 03 dic`); the time is always 24 h |
-| `temperature_unit` | `celsius` | `celsius` or `fahrenheit`: every temperature on the display, the alarm screen and the legends (`°C` in a label becomes `°F`). Colour thresholds (`theme.scale`), alarm limits and the sensor keys always stay in °C. Also in the tray (*Temperature unit*, remembered in `config/state.yaml`) and `--send unit:f` / `unit:c` / `unit:toggle` / `unit:config` |
+| `temperature_unit` | `celsius` | `celsius` or `fahrenheit`: every temperature on the display and the legends (`°C` in a label becomes `°F`). Colour thresholds (`theme.scale`), the red-background ranges and the sensor keys always stay in °C. Also in the tray (*Temperature unit*, remembered in `config/state.yaml`) and `--send unit:f` / `unit:c` / `unit:toggle` / `unit:config` |
 | `sensors.cpu_power_max` | `150` | watts of a full bar on the CPU page's *package power* card; it grows by itself if the CPU draws more (keys `cpu_power_peak`, `cpu_power_scale`) |
 | `layout.header` | `false` | `true`: top bar with page title, date/time and the optional logos. `false` (default): **compact layout** — no top bar, a 15 % bigger ring, cards stretched over the full height (fonts and spacing scale with them), logos at the two lower corners of the ring |
 | `layout.logo_h` | `22` | logo height in px |
@@ -138,7 +138,7 @@ a deliberate quit (tray *Quit*, `--send quit`), which leaves `logs/quit.flag` un
 a crashed child leaves `logs/hw_fault.txt`, the main program `logs/fault.txt`. A process that dies from a crash ends at once (no "stopped working" dialog),
 which is also why the "Ciao" screen cannot appear in that case: it is drawn only on an orderly stop (lock, sleep, shutdown, SIGTERM).
 
-## Night schedule, "Ciao" screen, temperature alarm, web preview, updates
+## Night schedule, "Ciao" screen, red background, web preview, updates
 
 All of these are in `config.yaml` and hot-reload.
 
@@ -165,21 +165,19 @@ On lock / sleep it returns to the pages by itself when you unlock. `--send away:
 
 ```yaml
 alerts:
-  temperature:          # the full-screen alarm
+  tint:                 # the background turns red as things heat up / get busy
     enabled: true
-    threshold: 85       # °C: every component ...
-    thresholds: {cpu: 90, gpu: 83, ram: 60, disk: 65, mb: 70}    # ... unless listed here
-    hysteresis: 3       # ends once the part is 3 °C below its limit
-    min_show_s: 15      # but never sooner than this
-    rotate_s: 6         # several parts too hot: they alternate
-    wake: true          # backlight to 100 % during the alarm, even in the night window
+    temp: [75, 95]      # °C (cpu, gpu, ram): no red at the first value, full red at the second
+    load: [85, 100]     # % utilisation (cpu, gpu, ram)
+    strength: 0.5       # how red the background gets at full (0..1)
+    steps: 6            # quantised levels
   pages: []             # the older "show this page when <condition>" rules: [{page: memory, when: "mem_pct >= 92", hold_s: 30}]
 ```
 
-Components: `cpu` (package temperature, with load / power / clock / hottest core), `gpu` (core, with hot spot / load / power / fan / VRAM),
-`ram` (modules, needs `sensors.ram_temp`), `disk` (the hottest drive: its name, type, space used, health) and `mb` (hottest motherboard probe).
-The alarm screen uses the theme's background and shows the component, the device name, the temperature, how far over the limit it is, a gauge with the limit marked, and the details.
-`alerts:` written as a plain list still works (page rules only, no alarm screen).
+The red follows the worst of the six readings (`cpu_temp`, `gpu_temp`, `ram_temp`, `cpu_load`, `gpu_load`, `mem_pct`). Only the colours of the background change:
+no text and no layout move, and the cards, rings and bars keep their own colours. Because every change of the background redraws the whole screen
+(about 2 s on this USB link) the red is smoothed (quick to build up, slow to fade) and quantised into `steps` levels instead of following every spike.
+`alerts:` written as a plain list still works (page rules, no tint).
 
 ```yaml
 web:                    # live preview in a browser, page buttons, brightness slider (tray: "Web preview" tick)

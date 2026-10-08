@@ -10,11 +10,11 @@ from collections import defaultdict
 import yaml
 from PIL import Image
 
-from .alerts import TempAlarm
 from .display import Display, rgb565
 from .render import Renderer
 from .schedule import night_active, night_brightness
 from .sensors import Sensors
+from .tint import Tint
 from .session import SessionWatcher
 from . import units
 from .updates import UpdateChecker
@@ -142,8 +142,8 @@ class App:
         self.renderer = Renderer(cfg.get("theme"), cfg.get("layout"), self.unit)
         self.commands = CommandQueue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<0-100> | away:<event> | web:on|off|toggle
         self.lang = cfg.get("language", "en")
-        self.alarm = TempAlarm(cfg.get("alerts"), self.lang, self.unit)
-        self.base_brightness = self._cfg_brightness = self.display.brightness   # what the user asked for; the night schedule / alarm override it
+        self.tint = Tint(cfg.get("alerts"))
+        self.base_brightness = self._cfg_brightness = self.display.brightness   # what the user asked for; the night schedule overrides it
         self.away: str | None = None            # lock | sleep | shutdown while the "Ciao" screen is shown
         self.bye_done = threading.Event()       # set once the shutdown frame has been sent
         self.last_frame: Image.Image | None = None
@@ -199,7 +199,7 @@ class App:
         if "brightness" in cfg.get("display", {}) and Display._clamp_pct(cfg["display"]["brightness"]) != self._cfg_brightness:
             self.base_brightness = self._cfg_brightness = Display._clamp_pct(cfg["display"]["brightness"])
         self.lang = cfg.get("language", "en")
-        self.alarm.configure(cfg.get("alerts"), self.lang, self.unit)
+        self.tint.configure(cfg.get("alerts"))
         self.sensors.set_language(cfg)
         self._sync_web()
         log.info("configuration reloaded (%s): %d pages, theme preset %s", reason, len(pages), (cfg.get("theme") or {}).get("preset"))
@@ -217,7 +217,6 @@ class App:
         if state.get("unit") in ("C", "F"):
             self.unit_wanted = state["unit"]
             self.renderer.unit = self.unit
-            self.alarm.configure(self.cfg.get("alerts"), self.lang, self.unit)
 
     def _save_state(self):
         state = {}
@@ -317,7 +316,6 @@ class App:
             arg = cmd[5:].lower()
             self.unit_wanted = {"c": "C", "celsius": "C", "f": "F", "fahrenheit": "F", "config": None}.get(arg, "C" if self.unit == "F" else "F")
             self.renderer.unit = self.unit
-            self.alarm.configure(self.cfg.get("alerts"), self.lang, self.unit)
             self._save_state()
         elif cmd == "update:check":
             threading.Thread(target=self.updates.check_now, daemon=True).start()
@@ -368,20 +366,18 @@ class App:
         return night_active(self.cfg.get("night"))
 
     def _compose(self, snap: dict, now: float):
-        """The frame to show now and what it is: 'away' | 'alarm' | 'night' | 'page'."""
+        """The frame to show now and what it is: 'away' | 'night' | 'page'."""
         away_cfg = self.cfg.get("away") or {}
         away_on = bool(away_cfg.get("enabled", True))
         if self.away == "shutdown" and away_on:
             return self._away_frame(away_cfg), "away"
-        alarm = self.alarm.update(snap, now)
-        if alarm:
-            return self.renderer.render_alert(alarm, int(now) % 2 == 0, snap), "alarm"
         if self.away and away_on:
             return self._away_frame(away_cfg), "away"
         if self._night() and str((self.cfg.get("night") or {}).get("mode", "dim")) == "off":
             return Image.new("RGB", (480, 320), (0, 0, 0)), "night"
         idx = self._current(snap)
-        return self.renderer.render(self.pages[idx], snap, idx, len(self.pages)), "page"
+        self.tint.update(snap, now)
+        return self.renderer.render(self.pages[idx], snap, idx, len(self.pages), self.tint.alpha), "page"
 
     def _away_frame(self, away_cfg: dict):
         default = "Ciao" if self.lang == "it" else "Bye"
@@ -389,10 +385,8 @@ class App:
         return self.renderer.render_message(str(away_cfg.get("text", default)), sub)
 
     def _apply_brightness(self, kind: str):
-        """Backlight: an alarm wakes the display to 100 %, the night schedule dims it, otherwise what the user chose."""
-        if kind == "alarm" and self.alarm.wake:
-            want = 100
-        elif self._night():
+        """Backlight: the night schedule dims it, otherwise what the user chose."""
+        if self._night():
             want = night_brightness(self.cfg.get("night"))
         else:
             want = self.base_brightness

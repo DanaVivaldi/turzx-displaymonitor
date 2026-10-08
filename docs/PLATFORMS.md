@@ -1,7 +1,7 @@
 # Windows, Linux and macOS
 
 DisplayMonitor runs on all three. The display driver, the renderer, the pages, the themes, the web preview, the night schedule,
-the "Ciao" screen, the temperature alarm and the update check are the same code everywhere. Only two things are platform specific:
+the "Ciao" screen, the red background and the update check are the same code everywhere. Only two things are platform specific:
 **where the sensor values come from** and **how session events (lock / sleep / shutdown) are detected**.
 
 | | Windows 10/11 | Linux | macOS |

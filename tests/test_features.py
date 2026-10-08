@@ -1,4 +1,4 @@
-"""Night schedule, "Ciao" screen, temperature alarm, web preview, update check, Linux / macOS parsers."""
+"""Night schedule, "Ciao" screen, red background, web preview, update check, Linux / macOS parsers."""
 import datetime
 import http.client
 import io
@@ -12,7 +12,7 @@ from PIL import Image
 
 from displaymonitor import render as render_mod
 from displaymonitor import schedule, sensors_posix, session, updates
-from displaymonitor.alerts import TempAlarm
+from displaymonitor.tint import Tint
 from displaymonitor.app import App, CommandQueue, load_config, page_alert_rules
 from displaymonitor.demo import demo_snapshot
 from displaymonitor.render import Renderer
@@ -46,59 +46,70 @@ def test_night_brightness():
     assert schedule.night_brightness({"brightness": 250}) == 100
 
 
-# -- temperature alarm ---------------------------------------------------------------------------
-def snap(**kw):
-    s = {"cpu_temp": 50, "cpu_name": "Test CPU", "cpu_load": 40, "gpu_temp": 50, "gpu_short": "Test GPU", "mem_pct": 30, "mb_t_max": 40,
-         "disks": [{"name": "Disk A", "temp": 40, "kind": "NVMe", "used_pct": 50, "life": 99}]}
-    s.update(kw)
-    return s
+# -- red background -------------------------------------------------------------------------------
+def tint(**kw):
+    return Tint({"tint": {"enabled": True, **kw}})
 
 
-def alarm(**kw):
-    return TempAlarm({"temperature": {"enabled": True, **kw}}, "en")
+def settle(t, snap_, seconds=40):
+    for i in range(seconds):
+        t.update(snap_, float(i))
+    return t
 
 
-def test_alarm_starts_at_the_threshold_with_details():
-    a = alarm()
-    assert a.update(snap(cpu_temp=84), 0) is None
-    r = a.update(snap(cpu_temp=85), 1)
-    assert r["comp"] == "cpu" and r["temp"] == 85 and r["limit"] == 85 and r["name"] == "Test CPU"
-    assert any(label == "Load" and value == "40%" for label, value in r["rows"])
+def test_tint_follows_the_worst_reading_and_stays_off_below_the_ranges():
+    t = tint()
+    assert t.target({"cpu_temp": 74, "gpu_temp": 60, "cpu_load": 80, "mem_pct": 50}) == 0.0
+    assert t.target({"cpu_temp": 95}) == 1.0 and t.target({"gpu_load": 100}) == 1.0
+    assert t.target({"cpu_temp": 85}) == pytest.approx(0.5) and t.target({"mem_pct": 92.5}) == pytest.approx(0.5)
+    assert t.target({"ram_temp": 85}) == pytest.approx(0.5) and t.target({}) == 0.0
 
 
-def test_alarm_hysteresis_and_minimum_time():
-    a = alarm(hysteresis=3, min_show_s=15)
-    assert a.update(snap(cpu_temp=90), 100)
-    assert a.update(snap(cpu_temp=83), 101)              # below the limit but inside the hysteresis: still on
-    assert a.update(snap(cpu_temp=70), 102)              # cooled down but shown for less than min_show_s: held
-    assert a.update(snap(cpu_temp=70), 114)["temp"] == 70
-    assert a.update(snap(cpu_temp=70), 116) is None      # 16 s after the start: over
+def test_tint_is_smoothed_quantised_and_fades_slowly():
+    t = tint(steps=6, strength=0.5)
+    assert t.update({"cpu_load": 40}, 0.0) == 0 and t.alpha == 0.0
+    assert t.update({"cpu_load": 100}, 1.0) < 6                             # a single spike does not turn the screen fully red
+    settle(t, {"cpu_load": 100})
+    assert t.level == 6 and t.alpha == pytest.approx(0.5)
+    steps_seen = []
+    for i in range(40, 140):
+        steps_seen.append(t.update({"cpu_load": 10}, float(i)))
+    assert steps_seen[0] >= 5 and steps_seen[-1] == 0                        # it cools down ...
+    assert all(a >= b for a, b in zip(steps_seen, steps_seen[1:]))           # ... monotonically, never flickering
+    assert len(set(steps_seen)) <= 7
 
 
-def test_alarm_per_component_limit_disk_and_rotation():
-    a = alarm(thresholds={"gpu": 60, "disk": 70}, rotate_s=6)
-    r = a.update(snap(gpu_temp=65, disks=[{"name": "Hot", "temp": 72, "kind": "SSD"}, {"name": "Cool", "temp": 30}]), 0)
-    seen = {a.update(snap(gpu_temp=65, disks=[{"name": "Hot", "temp": 72, "kind": "SSD"}]), t)["comp"] for t in (0, 6, 12, 18)}
-    assert seen == {"gpu", "disk"} and r["count"] == 2
-    assert r["comp"] in ("gpu", "disk")
-
-
-def test_alarm_disabled_by_the_legacy_list_form():
-    a = TempAlarm([{"page": "cpu", "when": "True"}], "en")
-    assert a.update(snap(cpu_temp=120), 0) is None
-    assert page_alert_rules({"alerts": [{"page": "cpu"}]}) == [{"page": "cpu"}]
-    assert page_alert_rules({"alerts": {"pages": [{"page": "gpu"}]}}) == [{"page": "gpu"}]
-    assert page_alert_rules({}) == []
+def test_tint_disabled_by_config_or_by_the_older_list_form():
+    assert Tint([{"page": "cpu"}]).update({"cpu_temp": 120}, 0.0) == 0
+    t = Tint({"tint": {"enabled": False}})
+    assert t.update({"cpu_temp": 120}, 0.0) == 0 and t.alpha == 0.0
+    t.configure({"tint": {"enabled": True}})
+    settle(t, {"cpu_temp": 120})
+    assert t.alpha > 0
+    t.configure({"tint": {"enabled": False}})
+    assert t.alpha == 0.0
 
 
 # -- screens ---------------------------------------------------------------------------------------
-def test_alarm_message_and_night_frames_render():
+def test_message_screen_and_tinted_pages_render():
     r = Renderer(None, {"header": False})
-    a = alarm().update(snap(cpu_temp=99), 0)
-    assert r.render_alert(a, True, demo_snapshot("en")).size == (480, 320) and r.render_alert(a, False).size == (480, 320)
     assert r.render_message("Ciao", "locked").size == (480, 320) and r.render_message("Ciao").size == (480, 320)
+    page = load_config(examples=True, lang="en")[1]["pages"][0]
+    s = demo_snapshot("en")
+    plain, red = r.render(page, s, 0, 9), r.render(page, s, 0, 9, 0.5)
+    assert plain.size == red.size == (480, 320) and plain.tobytes() != red.tobytes()
+    px_a, px_b = plain.getpixel((300, 4)), red.getpixel((300, 4))              # a background pixel above the cards got redder
+    assert px_b[0] - px_b[2] > px_a[0] - px_a[2]
 
 
+def test_gpu_card_on_the_overview_has_two_labelled_bars():
+    cfg, pages = load_config(examples=True, lang="it")
+    gpu = pages["pages"][0]["cards"][0]
+    assert [b["label"] for b in gpu["bars"]] == ["GPU", "VRAM"] and gpu["bars"][1]["value"] == "gpu_vram_pct"
+    r = Renderer(None, {"header": False})
+    s = {**demo_snapshot("it"), "gpu_load": 90.0, "gpu_vram_pct": 20.0}
+    img = r.render(pages["pages"][0], s, 0, 9)
+    assert img.size == (480, 320)
 def make_app(extra=None):
     cfg, pages = load_config(examples=True, lang="it")
     cfg = {**cfg, **(extra or {})}
@@ -112,11 +123,6 @@ def test_app_chooses_the_frame_and_the_backlight(monkeypatch):
     assert kind == "page"
     app._apply_brightness(kind)
     assert app.display.brightness == 12                          # night: dimmed
-    s2 = {**s, "cpu_temp": 97}
-    _, kind = app._compose(s2, 1001.0)
-    app._apply_brightness(kind)
-    assert kind == "alarm" and app.display.brightness == 100    # the alarm wakes the screen
-    app.alarm.active.clear(); app.alarm._held.clear(); app.alarm._last = []
     app.away = "lock"
     _, kind = app._compose(s, 2000.0)
     assert kind == "away"
@@ -128,6 +134,10 @@ def test_app_chooses_the_frame_and_the_backlight(monkeypatch):
     app.cfg["night"]["enabled"] = False
     app._apply_brightness("page")
     assert app.display.brightness == 55
+    hot = {**s, "cpu_temp": 97.0, "cpu_load": 100.0}
+    for i in range(30):
+        app._compose(hot, 4000.0 + i)
+    assert app.tint.alpha > 0.4                                  # the red background builds up while the CPU is hot
 
 
 def test_shutdown_screen_wins_over_everything_and_commands_wake_the_loop():
@@ -379,23 +389,21 @@ def test_fmt_converts_temperatures_but_not_percentages():
     assert render_mod.fmt("{cpu_temp:.0f}°C", s) == "50°C" and render_mod.fmt("{cpu_temp:.0f}°C", {}, "F") == "--°F"
 
 
-def test_fahrenheit_leaves_colours_and_alarm_limits_in_celsius():
+def test_fahrenheit_changes_the_text_not_the_colours():
     r_c, r_f = Renderer(None, {"header": False}), Renderer(None, {"header": False}, "F")
     assert r_f.unit == "F"
     snap_ = demo_snapshot("en")
     page = load_config(examples=True, lang="en")[1]["pages"][1]
     a, b = r_c.render(page, snap_, 1, 9), r_f.render(page, snap_, 1, 9)
     assert a.size == b.size == (480, 320) and a.tobytes() != b.tobytes()
-    al = TempAlarm({"temperature": {"threshold": 85}}, "en", "F")
-    assert al.update(snap(cpu_temp=84), 0) is None                       # 84 °C = 183 °F: below the 85 °C limit
-    r = al.update(snap(cpu_temp=90), 1)
-    assert r["temp"] == 90 and round(r["temp_show"]) == 194 and r["unit"] == "°F" and "°F" in r["limit_text"] and r["over"].startswith("+9°F")
-    assert r_f.render_alert(r, True, snap_).size == (480, 320)
+    assert r_f.temp_color(70.0) == r_c.temp_color(70.0)                     # the colour scale is judged in °C
+    t = Tint({"tint": {"enabled": True}})
+    assert t.target({"cpu_temp": 85.0}) == pytest.approx(0.5)               # ... and so is the red background
 
 
 def test_app_unit_command_and_cpu_power_card():
     app = make_app({"temperature_unit": "fahrenheit"})
-    assert app.unit == "F" and app.renderer.unit == "F" and app.alarm.unit == "F"
+    assert app.unit == "F" and app.renderer.unit == "F"
     app._handle("unit:c")
     assert app.unit == "C" and app.renderer.unit == "C"
     app._handle("unit:toggle")

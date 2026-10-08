@@ -77,17 +77,15 @@ away:
   text: "Ciao"
   subtitle: true        # una riga piccola sotto: "schermo bloccato", "sospensione", "spegnimento"
 
-# Allarme temperatura: quando un componente supera il suo limite tutto lo schermo diventa un allarme con i dettagli
-# (nome, temperatura, carico, potenza, ventola ...). Finisce quando il pezzo scende di `hysteresis` gradi sotto il limite.
+# Sfondo rosso: quando le temperature o l'utilizzo di CPU / GPU / RAM salgono, lo sfondo dello schermo vira al rosso.
+# Cambiano solo i colori dello sfondo (nulla si sposta), a `steps` livelli e con un po' di inerzia, perche' ogni cambio ridisegna lo schermo.
 alerts:
-  temperature:
+  tint:
     enabled: true
-    threshold: 85       # °C, per tutti i componenti ...
-    # thresholds: {cpu: 90, gpu: 83, ram: 60, disk: 65, mb: 70}    # ... salvo quelli indicati qui
-    hysteresis: 3
-    min_show_s: 15
-    rotate_s: 6         # piu' pezzi troppo caldi insieme: si alternano
-    wake: true          # retroilluminazione al 100 % mentre l'allarme e' visibile, anche durante l'orario notturno
+    temp: [75, 95]      # °C (cpu, gpu, ram): nessun rosso al primo valore, rosso pieno al secondo
+    load: [85, 100]     # % di utilizzo (cpu, gpu, ram)
+    strength: 0.5       # quanto diventa rosso al massimo (0..1)
+    steps: 6
   # Le regole piu' vecchie: mostra una pagina per hold_s secondi finche' una condizione e' vera (chiavi: python -m displaymonitor --dump-sensors)
   pages: []
   #  - {page: memory, when: "mem_pct is not None and mem_pct >= 92", hold_s: 30}
