@@ -15,6 +15,8 @@ import numpy as np
 import serial
 from serial.tools.list_ports import comports
 
+from . import validate
+
 log = logging.getLogger(__name__)
 
 W, H = 480, 320                  # logical (landscape) frame handed to show()
@@ -36,28 +38,39 @@ def rgb565(img) -> np.ndarray:
 
 class Display:
     def __init__(self, cfg: dict):
-        self.rot_k = int(cfg.get("rotate", 1))           # np.rot90 steps: 1 or 3 depending on how the panel is mounted
-        self.brightness = self._clamp_pct(cfg.get("brightness", 100))      # percent, 100 = brightest
-        self.tile = int(cfg.get("tile", 2))
-        self.gap_tiles = int(cfg.get("merge_gap", 4)) // self.tile
-        self.band = int(cfg.get("refresh_band", 8))      # rows resent every frame to heal corrupted pixels (0 = off)
-        self.max_px = int(cfg.get("max_block_px", 12800))
-        self.reset_on_connect = bool(cfg.get("reset_on_connect", False))   # RESET (101) showed no visible effect: off
-        self.flood_bytes = int(cfg.get("flood_bytes", 2_200_000))
+        st, warnings = validate.display_settings(cfg)
+        validate.warn_all(warnings)
+        self.rot_k = st["rotate"]                        # np.rot90 steps: 1 or 3 depending on how the panel is mounted
+        self.brightness = st["brightness"]               # percent, 100 = brightest
+        self.tile = st["tile"]
+        self.gap_tiles = st["merge_gap"] // self.tile
+        self.band = st["refresh_band"]                   # rows resent every frame to heal corrupted pixels (0 = off) ...
+        self.band_budget = st["band_budget"]             # ... but only while the frame's own changes are smaller than this many bytes
+        self.max_px = st["max_block_px"]
+        self.reset_on_connect = st["reset_on_connect"]   # RESET (101) showed no visible effect: off
+        self.flood_bytes = st["flood_bytes"]
         self.needs_flood = False      # set when the last session may have ended mid-bitmap (hard kill, link error)
         self._band_y = 0
         self._ser = None
         self._prev = None
         self.last_bytes = 0
         self.last_rects = 0
+        self.last_ms = 0.0            # time spent sending the last frame
+        self.band_skipped = 0         # frames whose healing band was left out because the panel was busy
+
+    def _settings(self) -> dict:
+        return {"rotate": self.rot_k, "brightness": self.brightness, "tile": self.tile, "merge_gap": self.gap_tiles * self.tile,
+                "refresh_band": self.band, "band_budget": self.band_budget, "max_block_px": self.max_px,
+                "flood_bytes": self.flood_bytes, "reset_on_connect": self.reset_on_connect}
 
     def configure(self, cfg: dict):
-        """Apply display settings changed in config.yaml while running (hot reload)."""
-        self.rot_k = int(cfg.get("rotate", self.rot_k))
-        self.tile = int(cfg.get("tile", self.tile))
-        self.gap_tiles = int(cfg.get("merge_gap", 4)) // self.tile
-        self.band = int(cfg.get("refresh_band", self.band))
-        self.max_px = int(cfg.get("max_block_px", self.max_px))
+        """Apply display settings changed in config.yaml while running (hot reload). A wrong value keeps the current one.
+        Brightness is owned by App (night schedule), so it is left alone here."""
+        keep = self._settings()
+        st, warnings = validate.display_settings(cfg, keep)
+        validate.warn_all(warnings)
+        self.rot_k, self.tile, self.band, self.band_budget, self.max_px = st["rotate"], st["tile"], st["refresh_band"], st["band_budget"], st["max_block_px"]
+        self.gap_tiles = st["merge_gap"] // self.tile
         self.invalidate()                       # rotation / tile changes: redraw everything
 
     # -- connection -----------------------------------------------------------------------------
@@ -189,17 +202,22 @@ class Display:
         if not self.connected:
             return False
         try:
+            t0 = time.time()
             hw = np.ascontiguousarray(np.rot90(frame, self.rot_k))      # (480, 320) portrait panel
             prev = self._prev
             rects = [(0, 0, HW_W, HW_H)] if prev is None else self._diff(prev, hw)
-            if prev is not None and self.band:     # self-healing: also resend one band per frame, cycling over the screen
-                rects.append((0, self._band_y, HW_W, self.band))
-                self._band_y = (self._band_y + self.band) % HW_H
+            if prev is not None and self.band:     # self-healing: also resend one band per frame, cycling over the screen ...
+                if sum(w * h * 2 for _, _, w, h in rects) <= self.band_budget:
+                    rects.append((0, self._band_y, HW_W, self.band))
+                    self._band_y = (self._band_y + self.band) % HW_H
+                else:                              # ... unless the panel is already busy with this frame's changes
+                    self.band_skipped += 1
             self.last_rects, self.last_bytes = len(rects), 0
             for (x, y, w, h) in rects:
                 self._send_rect(hw, x, y, w, h)
             self._ser.flush()
             self._prev = hw
+            self.last_ms = (time.time() - t0) * 1000
             return True
         except (serial.SerialException, OSError) as e:
             log.warning("display link lost: %s", e)

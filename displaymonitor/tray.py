@@ -67,6 +67,7 @@ def build_tray(app):
                          lambda icon, item: webbrowser.open((app.updates.latest or {}).get("url", "https://github.com")),
                          visible=lambda item: bool(app.updates.available)),
         pystray.MenuItem(tr["check"], send("update:check")),
+        pystray.MenuItem(lambda item: "≈ " + app.diag_text(), None, enabled=False),
         pystray.MenuItem(tr["brightness"], pystray.Menu(
             *[pystray.MenuItem(f"{v}%", send(f"brightness:{v}")) for v in (20, 40, 60, 80, 100)])),
         pystray.Menu.SEPARATOR,

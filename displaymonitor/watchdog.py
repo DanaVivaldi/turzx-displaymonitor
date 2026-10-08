@@ -38,19 +38,35 @@ def touch_heartbeat():
         pass
 
 
-def _flag_pid() -> int | None:
+def _flag_info() -> tuple[int | None, float | None]:
+    """(pid, process start time) written by the program in logs/running.flag; the start time is None in files from older versions."""
     try:
         with open(_path("running.flag")) as f:
-            return int(f.read().split()[0])
+            parts = f.read().split()
+        pid = int(parts[0])
     except (OSError, ValueError, IndexError):
-        return None
+        return None, None
+    try:
+        return pid, float(parts[1])
+    except (ValueError, IndexError):
+        return pid, None
 
 
-def _is_ours(pid: int) -> bool:
+def _flag_pid() -> int | None:
+    return _flag_info()[0]
+
+
+def is_ours(pid: int, started: float | None) -> bool:
+    """The process is alive AND is our program: same start time as recorded (a recycled pid has a different one) and
+    `displaymonitor` on its command line. Anything else, even another Python, is never touched."""
     try:
         p = psutil.Process(pid)
-        return p.is_running() and "python" in p.name().lower()
-    except psutil.Error:
+        if not p.is_running() or "python" not in p.name().lower():
+            return False
+        if started is not None and abs(p.create_time() - started) > 2.0:
+            return False
+        return "displaymonitor" in " ".join(p.cmdline()).lower()
+    except (psutil.Error, OSError):
         return False
 
 
@@ -59,10 +75,10 @@ def decide(now: float | None = None) -> str:
     now = now or time.time()
     if os.path.exists(_path("quit.flag")):
         return "quit-requested"
-    pid = _flag_pid()
+    pid, started = _flag_info()
     if pid is None:
         return "not-running"
-    if not _is_ours(pid):
+    if not is_ours(pid, started):
         return "dead"
     try:
         age = now - os.path.getmtime(_path("heartbeat"))
@@ -88,7 +104,9 @@ def run_once() -> str:
     if state in ("ok", "quit-requested"):
         return state
     if state == "frozen":
-        pid = _flag_pid()
+        pid, started = _flag_info()
+        if pid is None or not is_ours(pid, started):            # re-check right before killing
+            return "frozen: process changed, left alone"
         try:
             p = psutil.Process(pid)
             for c in p.children(recursive=True):

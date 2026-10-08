@@ -10,6 +10,7 @@ import zipfile
 import pytest
 from PIL import Image
 
+from displaymonitor import app as app_mod
 from displaymonitor import render as render_mod
 from displaymonitor import schedule, sensors_posix, session, updates
 from displaymonitor.tint import Tint
@@ -359,72 +360,199 @@ def test_watchdog_decisions(tmp_path, monkeypatch):
     from displaymonitor import watchdog
     monkeypatch.setattr(watchdog, "LOGS", str(tmp_path))
     now = time.time()
+    alive = {"v": True}
+    monkeypatch.setattr(watchdog, "is_ours", lambda pid, started: alive["v"])      # the process checks are tested separately
     assert watchdog.decide(now) == "not-running"
-    (tmp_path / "running.flag").write_text(f"{os.getpid()} x")
+    (tmp_path / "running.flag").write_text(f"{os.getpid()} 123.0 x")
     assert watchdog.decide(now) == "ok"                                     # no heartbeat yet, flag just written: start-up grace
     os.utime(tmp_path / "running.flag", (now - 600, now - 600))
-    assert watchdog.decide(now) == "frozen"                                 # pid alive (this test process) but no heartbeat for minutes
+    assert watchdog.decide(now) == "frozen"                                 # alive but no heartbeat for minutes
     watchdog.touch_heartbeat()
     assert watchdog.decide(time.time()) == "ok"
-    (tmp_path / "running.flag").write_text("99999999 x")
+    alive["v"] = False
     assert watchdog.decide(now) == "dead"
     (tmp_path / "quit.flag").write_text("x")
     assert watchdog.decide(now) == "quit-requested"
 
 
-# -- Fahrenheit ------------------------------------------------------------------------------------
-def test_unit_helpers():
-    from displaymonitor import units
-    assert units.norm("Fahrenheit") == "F" and units.norm("f") == "F" and units.norm("°F") == "F" and units.norm(None) == "C" and units.norm("kelvin") == "C"
-    assert units.c_to_f(0) == 32 and units.c_to_f(100) == 212 and units.delta(10, "F") == 18 and units.delta(10, "C") == 10
-    assert units.convert_numbers("61 63 60.5", "F") == "142 145 140.9" and units.convert_numbers("61", "C") == "61"
-    assert units.swap_symbol("CPU °C · 45°C", "F") == "CPU °F · 45°F"
-    assert units.is_temperature_key("cpu_temp") and units.is_temperature_key("mb_t3") and units.is_temperature_key("weather_feels")
-    assert not units.is_temperature_key("cpu_load") and not units.is_temperature_key("gpu_vram_pct") and not units.is_temperature_key("mem_pct")
+def test_watchdog_only_recognises_our_own_process(tmp_path, monkeypatch):
+    from displaymonitor import watchdog
+
+    class Proc:
+        def __init__(self, pid, name="pythonw.exe", started=1000.0, cmd=("pythonw.exe", "-m", "displaymonitor")):
+            self._n, self._s, self._c = name, started, list(cmd)
+
+        def is_running(self):
+            return True
+
+        def name(self):
+            return self._n
+
+        def create_time(self):
+            return self._s
+
+        def cmdline(self):
+            return self._c
+    monkeypatch.setattr(watchdog.psutil, "Process", Proc)
+    assert watchdog.is_ours(1, 1000.5)                                       # same start time, our command line
+    assert not watchdog.is_ours(1, 5000.0)                                   # the pid was recycled by a younger process
+    monkeypatch.setattr(watchdog.psutil, "Process", lambda pid: Proc(pid, cmd=("python.exe", "other_script.py")))
+    assert not watchdog.is_ours(1, 1000.0)                                   # another Python program is never touched
+    monkeypatch.setattr(watchdog.psutil, "Process", lambda pid: Proc(pid, name="chrome.exe"))
+    assert not watchdog.is_ours(1, 1000.0)
+    monkeypatch.setattr(watchdog.psutil, "Process", lambda pid: Proc(pid, started=1000.0))
+    assert watchdog.is_ours(1, None)                                         # a flag written by an older version has no start time
+    monkeypatch.setattr(watchdog, "LOGS", str(tmp_path))
+    (tmp_path / "running.flag").write_text("4242 1000.25 2026-10-08")
+    assert watchdog._flag_info() == (4242, 1000.25)
+    (tmp_path / "running.flag").write_text("4242 2026-10-08 13:00:00")
+    assert watchdog._flag_info() == (4242, None)
 
 
-def test_fmt_converts_temperatures_but_not_percentages():
-    s = {"cpu_temp": 50.0, "cpu_load": 50.0, "cpu_p_temps_str": "50 60", "temp": 100.0, "name": "x"}
-    assert render_mod.fmt("{cpu_temp:.0f}°C {cpu_load:.0f}% {cpu_p_temps_str} {temp:.0f}°C", s, "F") == "122°F 50% 122 140 212°F"
-    assert render_mod.fmt("{cpu_temp:.0f}°C", s) == "50°C" and render_mod.fmt("{cpu_temp:.0f}°C", {}, "F") == "--°F"
+# -- configuration sanity, safe commands, atomic files, stale data, diagnostics ----------------------
+def test_display_settings_are_validated_and_never_raise():
+    import numpy as np
+    from displaymonitor import validate
+    from displaymonitor.display import Display
+    st, w = validate.display_settings({"tile": 3, "refresh_band": 9999, "max_block_px": 5, "rotate": 2, "brightness": "abc", "merge_gap": -4, "flood_bytes": "x"})
+    assert st["tile"] == 2 and st["refresh_band"] == 8 and st["max_block_px"] == 12800 and st["rotate"] == 1 and st["brightness"] == 100
+    assert st["merge_gap"] == 4 and st["flood_bytes"] == 2_200_000 and len(w) >= 6
+    for bad in (0, -2, 3, 7, 1000, "two", None, True, float("nan")):
+        d = Display({"tile": bad})                                           # used to raise ZeroDivisionError / break the diff
+        assert d.tile in validate.TILES
+        a = np.zeros((480, 320), "<u2")
+        b = a.copy()
+        b[10, 10] = 1
+        assert d._diff(a, b)
+    assert validate.display_settings({"tile": 8})[0]["tile"] == 8 and validate.display_settings({})[1] == []
 
 
-def test_fahrenheit_changes_the_text_not_the_colours():
-    r_c, r_f = Renderer(None, {"header": False}), Renderer(None, {"header": False}, "F")
-    assert r_f.unit == "F"
-    snap_ = demo_snapshot("en")
-    page = load_config(examples=True, lang="en")[1]["pages"][1]
-    a, b = r_c.render(page, snap_, 1, 9), r_f.render(page, snap_, 1, 9)
-    assert a.size == b.size == (480, 320) and a.tobytes() != b.tobytes()
-    assert r_f.temp_color(70.0) == r_c.temp_color(70.0)                     # the colour scale is judged in °C
-    t = Tint({"tint": {"enabled": True}})
-    assert t.target({"cpu_temp": 85.0}) == pytest.approx(0.5)               # ... and so is the red background
+def test_hot_reload_keeps_the_current_value_when_a_new_one_is_wrong():
+    from displaymonitor.display import Display
+    d = Display({"tile": 4, "refresh_band": 16})
+    d.configure({"tile": 3, "refresh_band": "lots", "max_block_px": 8000})
+    assert d.tile == 4 and d.band == 16 and d.max_px == 8000                 # the broken values were ignored, the good one applied
 
 
-def test_app_unit_command_and_cpu_power_card():
-    app = make_app({"temperature_unit": "fahrenheit"})
-    assert app.unit == "F" and app.renderer.unit == "F"
-    app._handle("unit:c")
-    assert app.unit == "C" and app.renderer.unit == "C"
-    app._handle("unit:toggle")
-    assert app.unit == "F"
-    app._handle("unit:config")
-    assert app.unit == "F" and app.unit_wanted is None
-    cpu = next(p for p in app.pages if p["id"] == "cpu")
-    assert any("cpu_power" in str(c.get("big", "")) for c in cpu["cards"])    # the power card is on the CPU page
-    s = demo_snapshot("it")
-    assert app.renderer.render(cpu, s, 1, len(app.pages)).size == (480, 320)
+def test_top_level_numbers_are_checked():
+    from displaymonitor import validate
+    t, w = validate.top_level({"refresh_s": 0, "rotate_s": "fast", "peek_s": -1})
+    assert t == {"refresh_s": 1.0, "rotate_s": 0.0, "peek_s": 30.0} and len(w) == 3
+    assert validate.top_level({"refresh_s": 2.5})[0]["refresh_s"] == 2.5
 
 
-def test_cpu_power_peak_and_scale():
-    from displaymonitor.sensors import Sensors
-    s = Sensors({"sensors": {"cpu_power_max": 100}})
-    out = {"cpu_power": 80.0}
-    s._power_stats(out)
-    assert out["cpu_power_peak"] == 80 and out["cpu_power_scale"] == 100
-    out = {"cpu_power": 60.0}
-    s._power_stats(out)
-    assert out["cpu_power_peak"] == 80                                    # the peak stays
-    out = {"cpu_power": 130.0}
-    s._power_stats(out)
-    assert out["cpu_power_peak"] == 130 and out["cpu_power_scale"] == 130  # the bar grows with the CPU
+def test_malformed_commands_are_ignored_not_fatal():
+    app = make_app()
+    for cmd in ("brightness:abc", "logo:", "logo:left", "page", "unit:", "away:", "web:", "", ":::", "page:nope", "brightness:", "rotate:x"):
+        app._handle(cmd)                                                     # none of these may raise
+    app._handle("brightness:40")
+    assert app.base_brightness == 40
+
+
+def test_atomic_write_and_the_command_inbox(tmp_path):
+    from displaymonitor import fsutil
+    target = tmp_path / "sub" / "state.yaml"
+    fsutil.atomic_write(str(target), "a: 1\n")
+    fsutil.atomic_write(str(target), "a: 2\n")
+    assert target.read_text() == "a: 2\n" and [p.name for p in target.parent.iterdir()] == ["state.yaml"]    # no temp files left
+    inbox = tmp_path / "control.cmd"
+    assert fsutil.take_lines(str(inbox)) == []
+    inbox.write_text("next\n\nhome\n", encoding="utf-8")
+    assert fsutil.take_lines(str(inbox)) == ["next", "home"] and not inbox.exists() and not (tmp_path / "control.cmd.work").exists()
+    inbox.write_text("late\n", encoding="utf-8")                               # a line written after the swap goes to a fresh file
+    assert fsutil.take_lines(str(inbox)) == ["late"]
+    (tmp_path / "control.cmd.work").write_text("left over\n", encoding="utf-8")   # a half-processed batch from a crashed run is not lost
+    assert fsutil.take_lines(str(inbox)) == ["left over"]
+
+
+def test_a_failing_frame_does_not_stop_the_loop(monkeypatch, tmp_path):
+    import threading
+    import time
+    from displaymonitor import watchdog
+    app = make_app()
+    monkeypatch.setattr(app_mod, "ROOT", str(tmp_path))                     # run() writes logs/running.flag, quit.flag: never the real ones
+    monkeypatch.setattr(watchdog, "LOGS", str(tmp_path / "logs"))
+    app.control_file, app.state_file = str(tmp_path / "control.cmd"), str(tmp_path / "state.yaml")
+    monkeypatch.setattr(type(app.display), "connected", property(lambda self: True))
+    monkeypatch.setattr(app.display, "show", lambda frame: True, raising=False)
+    calls = {"n": 0}
+
+    def boom(snap, now):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("bad page")
+        return Image.new("RGB", (480, 320)), "page"
+    monkeypatch.setattr(app, "_compose", boom)
+    monkeypatch.setattr(app.sensors, "start", lambda: None)
+    monkeypatch.setattr(app.sensors, "stop", lambda: None)
+    monkeypatch.setattr(app.session, "start", lambda: None)
+    monkeypatch.setattr(app.updates, "start", lambda: None)
+    app.refresh_s = 0.1
+    t = threading.Thread(target=app.run, daemon=True)
+    t.start()
+    deadline = time.time() + 15
+    while time.time() < deadline and calls["n"] < 4:
+        time.sleep(0.05)
+    app.commands.put("quit")
+    t.join(10)
+    assert calls["n"] >= 4 and app.errors == 2 and not t.is_alive()          # two bad frames were survived, then it kept drawing
+
+
+def test_healing_band_is_skipped_while_the_panel_is_busy():
+    import numpy as np
+    from displaymonitor.display import Display, HW_H, HW_W
+    d = Display({"refresh_band": 8, "band_budget": 24_000})
+    sent = []
+    d._ser = types.SimpleNamespace(write=lambda b: sent.append(len(b)), flush=lambda: None)
+    frame = np.zeros((320, 480), "<u2")
+    d.show(frame)                                                            # first frame: everything
+    d.show(frame)                                                            # nothing changed: the band is sent
+    assert d.last_rects == 1 and d.band_skipped == 0
+    big = frame.copy()
+    big[:, :] = 7                                                            # a whole-screen change: far over the budget
+    d.show(big)
+    assert d.band_skipped == 1 and d.last_ms >= 0
+    small = big.copy()
+    small[10:20, 10:20] = 3
+    d.show(small)
+    assert d.band_skipped == 1                                               # a small change: the band is back
+
+
+def test_stale_hardware_data_is_dimmed_and_labelled():
+    r = Renderer(None, {"header": False})
+    page = load_config(examples=True, lang="en")[1]["pages"][0]
+    s = demo_snapshot("en")
+    live = r.render(page, s, 0, 9)
+    stale = r.render(page, {**s, "hw_stale": True, "hw_age_s": 9.0}, 0, 9)
+    assert live.size == stale.size == (480, 320) and live.tobytes() != stale.tobytes()
+    assert not r._faded                                                      # the dimming never leaks into the next frame
+    badge_live = live.crop((380, 303, 480, 320)).tobytes()
+    assert badge_live != stale.crop((380, 303, 480, 320)).tobytes()
+
+
+def test_hardware_worker_reports_the_age_of_its_data():
+    import time
+    from displaymonitor import hwproc
+    w = hwproc.HardwareWorker({"sensors": {}}, lambda d: None, lambda k: None, target=hwproc.selftest_worker)
+    assert w.age() is None                                                   # not started
+    w.start()
+    try:
+        assert w.age() is None                                               # started but silent: start-up, not "stale"
+        deadline = time.time() + 20
+        while time.time() < deadline and w.age() is None:
+            w.poll()
+            time.sleep(0.05)
+        assert w.age() is not None and w.age() < 5
+        w._last -= 30
+        assert w.age() > 25
+    finally:
+        w.stop()
+
+
+def test_app_keeps_diagnostics():
+    app = make_app()
+    assert app.diag_text() == "--"
+    app.display.last_bytes, app.display.last_rects, app.display.last_ms = 20480, 3, 55.0
+    app._update_diag(100.0, 12.0, {"hw_age_s": 1.0})
+    t = app.diag_text()
+    assert "KB/s" in t and "55 ms" in t and "12 ms" in t and "3 rect" in t

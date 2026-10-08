@@ -88,6 +88,7 @@ class HardwareWorker:
         self._respawn_at = 0.0
         self._failures = 0
         self.restarts = 0
+        self._seen = False                  # has the current child sent anything yet?
 
     def start(self):
         ctx = mp.get_context("spawn")
@@ -97,10 +98,15 @@ class HardwareWorker:
         child_conn.close()
         self._conn = parent_conn
         self._started = self._last = time.time()
+        self._seen = False
         log.info("hardware sensors started in process %s", self._proc.pid)
 
     def stop(self):
         self._down(None, respawn=False)
+
+    def age(self) -> float | None:
+        """Seconds since the child last reported, or None while it has not reported yet (start-up) or is not running."""
+        return time.time() - self._last if self._seen and self._conn is not None else None
 
     def _down(self, reason, respawn=True):
         proc, conn, self._proc, self._conn = self._proc, self._conn, None, None
@@ -141,6 +147,7 @@ class HardwareWorker:
                 self.keys.update(data)
                 self.on_data(data)
                 self._last = now
+                self._seen = True
         except (EOFError, OSError):
             pass
         if not self._proc.is_alive():

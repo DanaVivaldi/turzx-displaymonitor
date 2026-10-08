@@ -25,6 +25,7 @@ import urllib.request
 import zipfile
 
 from . import __version__
+from .fsutil import atomic_write
 
 log = logging.getLogger(__name__)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -115,8 +116,7 @@ class UpdateChecker:
                 log.info("update available: %s -> %s (%s)", __version__, info["version"], info["url"])
         try:
             os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-            with open(CACHE, "w", encoding="utf-8") as f:
-                json.dump({"repo": self.repo, "checked": self._checked, "latest": self.latest}, f)
+            atomic_write(CACHE, json.dumps({"repo": self.repo, "checked": self._checked, "latest": self.latest}))
         except OSError:
             pass
         return info

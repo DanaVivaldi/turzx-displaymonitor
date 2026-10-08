@@ -50,7 +50,7 @@ async function state(){try{const s=await (await fetch(u('/state.json'),{cache:'n
 const p=document.getElementById('pages');p.innerHTML='';s.pages.forEach((g,i)=>{const b=document.createElement('button');b.textContent=g.title;
 if(i===s.index)b.className='on';b.onclick=()=>cmd('page:'+g.id);p.appendChild(b)});
 const r=document.getElementById('b');if(document.activeElement!==r)r.value=s.brightness;document.getElementById('bv').textContent=s.brightness+' %';
-document.getElementById('s').textContent='v'+s.version+(s.update?' - update '+s.update+' available':'')}catch(e){}}
+document.getElementById('s').textContent='v'+s.version+(s.update?' - update '+s.update+' available':'')+(s.diag?' - '+s.diag:'')}catch(e){}}
 document.querySelectorAll('button[data-c]').forEach(b=>b.onclick=()=>cmd(b.dataset.c));
 document.getElementById('b').onchange=e=>cmd('brightness:'+e.target.value);
 setInterval(frame,1000);setInterval(state,5000);frame();state();
@@ -183,4 +183,5 @@ class WebPreview:
         from . import __version__
         a = self.app
         return {"pages": [{"id": p["id"], "title": str(p.get("title", p["id"])).title()} for p in a.pages], "index": a.index,
-                "brightness": a.display.brightness, "version": __version__, "update": a.updates.available if a.updates else None}
+                "brightness": a.display.brightness, "version": __version__, "update": a.updates.available if a.updates else None,
+                "diag": a.diag_text() if hasattr(a, "diag_text") else ""}

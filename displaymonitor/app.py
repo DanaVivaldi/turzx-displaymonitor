@@ -7,6 +7,7 @@ import threading
 import time
 from collections import defaultdict
 
+import psutil
 import yaml
 from PIL import Image
 
@@ -16,7 +17,8 @@ from .schedule import night_active, night_brightness
 from .sensors import Sensors
 from .tint import Tint
 from .session import SessionWatcher
-from . import units
+from . import units, validate
+from .fsutil import atomic_write, take_lines
 from .updates import UpdateChecker
 from .watchdog import touch_heartbeat
 from .web import WebPreview
@@ -147,6 +149,9 @@ class App:
         self.away: str | None = None            # lock | sleep | shutdown while the "Ciao" screen is shown
         self.bye_done = threading.Event()       # set once the shutdown frame has been sent
         self.last_frame: Image.Image | None = None
+        self.diag: dict = {}                    # last frame's numbers: KB/s, send / render ms, rectangles (tray, web)
+        self._diag_t = 0.0
+        self.errors = 0                         # loop iterations that raised and were survived
         self.frame_seq = 0
         self.updates = UpdateChecker(cfg.get("updates"))
         self.web = WebPreview(self)
@@ -155,12 +160,15 @@ class App:
         ids = [p["id"] for p in self.pages]
         self.home = ids.index(cfg.get("home_page", ids[0])) if cfg.get("home_page", ids[0]) in ids else 0
         self.index = self.home                 # page currently shown
+        top, warns = validate.top_level(cfg)
+        validate.warn_all(warns)
+        self.refresh_s = top["refresh_s"]
         self.stay_on_selected = bool(cfg.get("stay_on_selected", True))
-        self.peek_s = float(cfg.get("peek_s", 30))
+        self.peek_s = top["peek_s"]
         self.peek_until = 0.0                  # a page picked from the tray stays visible until then, then back home
         self.pinned = False                    # stay on the picked page indefinitely
-        self.rotate = float(cfg.get("rotate_s", 0)) > 0   # automatic rotation (off by default: one recap page)
-        self.rotate_s = float(cfg.get("rotate_s", 0)) or 12.0   # seconds per page when rotation is switched on
+        self.rotate = top["rotate_s"] > 0   # automatic rotation (off by default: one recap page)
+        self.rotate_s = top["rotate_s"] or 12.0   # seconds per page when rotation is switched on
         self.alert_page = None
         self.alert_until = 0.0
         self._page_since = time.time()
@@ -190,9 +198,12 @@ class App:
         ids = [p["id"] for p in pages]
         self.home = ids.index(cfg.get("home_page", ids[0])) if cfg.get("home_page", ids[0]) in ids else 0
         self.index = ids.index(current) if current in ids else self.home
+        top, warns = validate.top_level(cfg)
+        validate.warn_all(warns)
+        self.refresh_s = top["refresh_s"]
         self.stay_on_selected = bool(cfg.get("stay_on_selected", True))
-        self.peek_s = float(cfg.get("peek_s", 30))
-        self.rotate_s = float(cfg.get("rotate_s", 0)) or 12.0
+        self.peek_s = top["peek_s"]
+        self.rotate_s = top["rotate_s"] or 12.0
         self._config_logos = tuple(renderer.t["logos"])
         self._load_state()
         self.display.configure(cfg.get("display", {}))
@@ -228,8 +239,7 @@ class App:
             state["unit"] = self.unit_wanted
         try:
             if state:
-                with open(self.state_file, "w", encoding="utf-8") as f:
-                    yaml.safe_dump(state, f)
+                atomic_write(self.state_file, yaml.safe_dump(state))
             elif os.path.exists(self.state_file):
                 os.remove(self.state_file)
         except OSError as e:
@@ -260,6 +270,13 @@ class App:
             self.peek_until = time.time() + self.peek_s
 
     def _handle(self, cmd: str):
+        """Run one command; a malformed one (brightness:abc, logo:) is logged and ignored, never allowed to stop the loop."""
+        try:
+            self._do(cmd)
+        except (ValueError, IndexError, KeyError, TypeError, OSError) as e:
+            log.warning("command %r ignored: %s", cmd, e)
+
+    def _do(self, cmd: str):
         n = len(self.pages)
         if cmd == "next":
             self._show_page((self.index + 1) % n)
@@ -322,13 +339,7 @@ class App:
 
     def _poll_control_file(self):
         """Commands from `python -m displaymonitor --send <cmd>` (clean restarts, page selection from scripts)."""
-        try:
-            with open(self.control_file, encoding="utf-8") as f:
-                lines = [ln.strip() for ln in f if ln.strip()]
-            os.remove(self.control_file)
-        except OSError:
-            return
-        for ln in lines:
+        for ln in take_lines(self.control_file):
             self.commands.put(ln)
 
     def _current(self, snap) -> int:
@@ -393,68 +404,92 @@ class App:
         if want != self.display.brightness:
             self.display.set_brightness(want)
 
+    # -- diagnostics ----------------------------------------------------------------------------
+    def diag_text(self) -> str:
+        d = self.diag
+        if not d:
+            return "--"
+        return f"{d['kbps']:.1f} KB/s · send {d['send_ms']:.0f} ms · render {d['render_ms']:.0f} ms · {d['rects']} rect"
+
+    def _update_diag(self, t0: float, render_ms: float, snap: dict):
+        dt = max(0.05, t0 - self._diag_t) if self._diag_t else self.refresh_s
+        self._diag_t = t0
+        kbps = self.display.last_bytes / 1024 / dt
+        old = self.diag.get("kbps", kbps)
+        self.diag = {"kbps": 0.8 * old + 0.2 * kbps, "send_ms": self.display.last_ms, "render_ms": render_ms, "bytes": self.display.last_bytes,
+                     "rects": self.display.last_rects, "band_skipped": self.display.band_skipped, "errors": self.errors,
+                     "hw_age_s": snap.get("hw_age_s")}
+
     # -- run ------------------------------------------------------------------------------------
     def run(self):
         # Clean-exit marker: if it is still there, the last run was killed (possibly mid-bitmap) and the display's
         # firmware may be waiting for pixels -> flush it before use. Removed only by an orderly shutdown.
+        # It also records this process (pid + start time) for the watchdog, which must never mistake another process for us.
         flag = os.path.join(ROOT, "logs", "running.flag")
         os.makedirs(os.path.dirname(flag), exist_ok=True)
         if os.path.exists(flag):
             log.warning("previous run did not exit cleanly")
             self.display.needs_flood = True
         with open(flag, "w") as f:
-            f.write(f"{os.getpid()} {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"{os.getpid()} {psutil.Process().create_time():.2f} {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         quit_flag = os.path.join(ROOT, "logs", "quit.flag")        # written by a deliberate quit, so the watchdog leaves it alone
         try:
             os.remove(quit_flag)
         except OSError:
             pass
-        beat = 0.0
+        beat = err_at = 0.0
         self.sensors.start()
         self.updates.start()
         self.session.start()
         self._sync_web()
-        refresh = float(self.cfg.get("refresh_s", 1.0))
         last_retry = 0.0
         try:
             while True:
                 t0 = time.time()
-                if self.cfg.get("hot_reload", True) and t0 - self._sig_checked >= 1.0:
-                    self._sig_checked = t0
-                    if config_signature() != self._sig:
-                        self.reload_config()
-                self._poll_control_file()
-                if t0 - beat >= 5.0:
-                    beat = t0
-                    touch_heartbeat()
                 try:
-                    while True:
-                        cmd = self.commands.get_nowait()
-                        if cmd == "quit":
-                            with open(quit_flag, "w") as f:
-                                f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
+                    if self.cfg.get("hot_reload", True) and t0 - self._sig_checked >= 1.0:
+                        self._sig_checked = t0
+                        if config_signature() != self._sig:
+                            self.reload_config()
+                    self._poll_control_file()
+                    if t0 - beat >= 5.0:
+                        beat = t0
+                        touch_heartbeat()
+                    try:
+                        while True:
+                            cmd = self.commands.get_nowait()
+                            if cmd == "quit":
+                                with open(quit_flag, "w") as f:
+                                    f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
+                                return
+                            self._handle(cmd)
+                    except queue.Empty:
+                        pass
+                    if not self.display.connected and t0 - last_retry >= 2.0:
+                        last_retry = t0
+                        self.display.connect()
+                    if self.display.connected or self.web.running or self.away == "shutdown":
+                        snap = self.sensors.snapshot()
+                        snap["update_available"] = self.updates.available
+                        img, kind = self._compose(snap, t0)
+                        render_ms = (time.time() - t0) * 1000
+                        self._apply_brightness(kind)
+                        self.last_frame, self.frame_seq = img, self.frame_seq + 1
+                        if self.display.connected:
+                            self.display.show(rgb565(img))
+                        self._update_diag(t0, render_ms, snap)
+                        log.debug("%s: %d rects, %d bytes, %.0f ms", kind, self.display.last_rects, self.display.last_bytes,
+                                  (time.time() - t0) * 1000)
+                        if self.away == "shutdown":      # the session is ending: the "Ciao" frame is out, nothing more to do
+                            self.bye_done.set()
+                            log.info("shutdown screen shown, exiting")
                             return
-                        self._handle(cmd)
-                except queue.Empty:
-                    pass
-                if not self.display.connected and t0 - last_retry >= 2.0:
-                    last_retry = t0
-                    self.display.connect()
-                if self.display.connected or self.web.running or self.away == "shutdown":
-                    snap = self.sensors.snapshot()
-                    snap["update_available"] = self.updates.available
-                    img, kind = self._compose(snap, t0)
-                    self._apply_brightness(kind)
-                    self.last_frame, self.frame_seq = img, self.frame_seq + 1
-                    if self.display.connected:
-                        self.display.show(rgb565(img))
-                    log.debug("%s: %d rects, %d bytes, %.0f ms", kind, self.display.last_rects, self.display.last_bytes,
-                              (time.time() - t0) * 1000)
-                    if self.away == "shutdown":      # the session is ending: the "Ciao" frame is out, nothing more to do
-                        self.bye_done.set()
-                        log.info("shutdown screen shown, exiting")
-                        return
-                self.commands.wake.wait(max(0.05, refresh - (time.time() - t0)))
+                except Exception:  # noqa: BLE001 - one bad frame, page or setting must not stop the program: keep the last picture
+                    self.errors += 1
+                    if t0 - err_at > 30:
+                        err_at = t0
+                        log.exception("main loop error (carrying on; fix the page / config and it recovers by itself)")
+                self.commands.wake.wait(max(0.05, self.refresh_s - (time.time() - t0)))
                 self.commands.wake.clear()
         finally:
             self.bye_done.set()

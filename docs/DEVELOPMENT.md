@@ -10,6 +10,8 @@ displaymonitor/
   render.py     page renderer (Pillow, 3× supersampling): ring, cards, legend, colour scheme
   display.py    USB display driver: port discovery, init, diff → rectangles → blocks, flood recovery
   hwproc.py     the hardware sensors in a child process (a native crash in a driver cannot kill the program) + its supervisor
+  validate.py   range-checks the numeric settings (tile must divide 320 and 480, ...): a typo never stops the program
+  fsutil.py     atomic file writes and the command-inbox swap
   watchdog.py   `--watchdog`: restart the program when it crashed / froze (heartbeat), unless it was quit on purpose
   sensors_posix.py  Linux / macOS backend (psutil + hwmon + nvidia-smi); pure parsers are unit-tested with fake data
   tint.py       the red background: worst of six readings, smoothed and quantised

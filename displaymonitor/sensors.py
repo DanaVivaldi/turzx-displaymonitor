@@ -527,5 +527,9 @@ class Sensors:
         s["time_s"] = now.strftime("%H:%M:%S")
         s["date"] = f"{DAYS[self.lang][now.weekday()]} {now.day:02d} {MONTHS[self.lang][now.month - 1]}"
         s["clock_seconds"] = [100 if i <= now.second else 0 for i in range(60)]
+        if self._worker is not None:                      # how old the hardware values are; "stale" well before the 20 s restart
+            age = self._worker.age()
+            s["hw_age_s"] = age
+            s["hw_stale"] = bool(age is not None and age > float(self.cfg.get("sensors", {}).get("stale_s", 6)))
         s.update(self.weather.snapshot())
         return s

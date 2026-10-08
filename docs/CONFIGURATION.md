@@ -44,6 +44,8 @@ If your own file is missing the example is used. Changes take effect after a res
 | `display.tile` / `merge_gap` | `2` / `4` | change‑detection tile and rectangle merging, in px |
 | `display.max_block_px` | `12800` | maximum pixels per bitmap command |
 | `display.refresh_band` | `8` | rows resent every frame, cycling (self‑healing); `0` = off |
+| `display.band_budget` | `24000` | the healing band is left out of a frame whose own changes exceed this many bytes (the panel is busy) |
+| `sensors.stale_s` | `6` | Windows: hardware values older than this many seconds are drawn dimmed with a *sensors stale* label (they become `--` after 20 s, when the sensor process is replaced) |
 | `display.flood_bytes` | `2200000` | recovery flood after an abnormal exit |
 | `refresh_s` | `1.0` | seconds between frames |
 | `hot_reload` | `true` | re-read `config.yaml`, `pages.yaml` and theme presets when they change (checked every second) and apply them without restarting. Sensor settings (poll periods, network interface) still need a restart. A broken file keeps the previous configuration and is reported in the log. Also: tray *Reload configuration*, `--send reload` |
@@ -124,6 +126,16 @@ Cards are stacked from the top; `h` is the height in px (all heights + 8 px gaps
 | `spark` | `title`, `big`, `right`, `history: <list key>`, `color`, `floor` (a sparkline graph) |
 
 `bar: {color: heat}` colours the bar with the same scheme as the text.
+
+## Safety nets
+
+* **A wrong setting never stops the program.** Numbers in `display:`, `refresh_s`, `rotate_s`, `peek_s` are range-checked: `tile` must divide 320 and 480 (1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 80, 160), `refresh_band` is 0–480, `max_block_px` 320–51200, `brightness` 0–100, `rotate` 1 or 3.
+  A bad value is replaced by a safe one (on a hot reload: the current one is kept) and `config:` warnings go to `logs/displaymonitor.log`.
+* **A bad command is ignored**, not fatal: `--send brightness:abc` or `--send logo:` only leave a warning in the log.
+* **A frame that fails to render** (a typo in a page) is logged once every 30 s and the last picture stays; fixing the file recovers by itself.
+* **Files are written atomically** (`config/state.yaml`, the weather and update caches), and `--send` commands are picked up by renaming the inbox, so none is lost or read half-written.
+* **The watchdog only touches our own process**: it checks the pid *and* the process start time *and* that `displaymonitor` is on its command line, so a recycled pid or another Python program is never killed.
+* **Diagnostics**: the tray menu and the web preview show the traffic of the last frame (KB/s, send ms, render ms, rectangles); `logs/displaymonitor.log` has the same per frame with `--debug`.
 
 ## Crash resilience (Windows)
 

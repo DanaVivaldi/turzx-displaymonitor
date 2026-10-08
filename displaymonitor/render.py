@@ -218,6 +218,7 @@ class Renderer:
         self._bg_cache = {}
         self._tint_cache = {}
         self._bg = self._background_for(None)
+        self._faded = False               # sensor data is stale: text is drawn dimmed
         self.update_text = None           # set by the app: shown small at the bottom-right when a newer version exists
 
     # -- helpers --------------------------------------------------------------------------------
@@ -311,6 +312,8 @@ class Renderer:
 
     def draw_text(self, d, x, y, s, px, fill, anchor="la", bold=False):
         s = units.swap_symbol(s, self.unit)                   # literal "°C" in legends and titles
+        if self._faded and isinstance(fill, tuple):
+            fill = lerp(fill, self.t["bg"], 0.55)             # stale data: dimmed, so it is not mistaken for a live reading
         stroke = sc(px * 0.035) if bold and self._faux_bold(px, bold) else 0
         font = self.font(px, bold)
         if self.t.get("text_shadow"):                     # dark drop shadow: keeps small text readable on busy pictures
@@ -505,12 +508,14 @@ class Renderer:
             for _, cy0, ch in geo:
                 d.rounded_rectangle(box(CARD_X0, cy0, CARD_X1, cy0 + ch), radius=sc(8), fill=t["panel"], outline=t["edge"], width=sc(1))
         legend_x = 14
+        stale = bool(snap.get("hw_stale"))
         if self.header:
             self.draw_text(d, W / 2, 20, str(page.get("title", "")), 15, t["white"], "mm")
             self.draw_text(d, W / 2, 36, f"{snap.get('date', '')}  ·  {snap.get('time', '')}", 11, t["dim"], "mm")
         elif self.clock:                      # compact layout: date + time above the ring's left side, legend to its right
             self.draw_text(d, 14, 5, str(snap.get("time", "")), 30, t["white"], "la", bold=True)
             self.draw_text(d, 15, 40, str(snap.get("date", "")), 13, t["dim"], "la", bold=True)
+        self._faded = stale                   # from here on: the sensor-driven parts (the clock above is not one of them)
         if page.get("ring"):
             self._ring(d, page["ring"], snap)
             if page["ring"].get("legend"):
@@ -528,7 +533,10 @@ class Renderer:
             x = W / 2 - total * 7 + i * 14 + 7
             d.ellipse(box(x - 3, 309, x + 3, 315), fill=t["cyan"] if i == index else t["track"])
         self.draw_text(d, 14, 312, f"{index + 1} / {total}", 9.5, t["dim"], "lm")
-        if snap.get("update_available"):
+        self._faded = False
+        if stale:
+            self.draw_text(d, W - 12, 312, f"sensors stale {snap.get('hw_age_s') or 0:.0f} s", 9.5, t["amber"], "rm")
+        elif snap.get("update_available"):
             self.draw_text(d, W - 12, 312, f"update v{snap['update_available']}", 9.5, t["cyan"], "rm")
         return img.resize((W, H), Image.LANCZOS)
 

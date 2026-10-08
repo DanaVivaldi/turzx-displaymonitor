@@ -21,6 +21,8 @@ import time
 import urllib.parse
 import urllib.request
 
+from .fsutil import atomic_write
+
 log = logging.getLogger(__name__)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(ROOT, "logs", "weather.json")
@@ -114,8 +116,7 @@ class Weather:
                     cur = self._fetch()
                     self._publish(cur, time.time())
                     os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-                    with open(CACHE, "w", encoding="utf-8") as f:
-                        json.dump({"stamp": time.time(), "current": cur}, f)
+                    atomic_write(CACHE, json.dumps({"stamp": time.time(), "current": cur}))
                     break
                 except Exception as e:  # noqa: BLE001
                     log.warning("weather fetch failed (attempt %d): %s", attempt + 1, e)

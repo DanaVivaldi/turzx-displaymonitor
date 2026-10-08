@@ -150,6 +150,6 @@ informed by [turing-smart-screen-python](https://github.com/mathoudebine/turing-
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (MPL‑2.0, downloaded, not redistributed) and the
 [PawnIO](https://github.com/namazso/PawnIO) driver. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Ideas and what is planned: [docs/ROADMAP.md](docs/ROADMAP.md) · Tests: `python -m pytest` (27 tests, no hardware needed; run on every push by GitHub Actions)
+Ideas and what is planned: [docs/ROADMAP.md](docs/ROADMAP.md) · Tests: `python -m pytest` (no hardware needed; run on every push by GitHub Actions)
 
 Italiano: [README.it.md](README.it.md)
