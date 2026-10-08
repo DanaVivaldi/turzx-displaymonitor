@@ -179,3 +179,15 @@ def test_display_never_connects_to_a_port_that_is_not_compatible(monkeypatch):
     opened = []
     monkeypatch.setattr(display_mod.serial, "Serial", lambda *a, **k: opened.append(a))
     assert Display({}).connect() is False and opened == []
+
+
+def test_pending_bytes_and_latency_count_the_headers_too():
+    d = connected_display(tx_budget_bytes=1024)
+    d.show(landscape(0))
+    d._ser.writes.clear()
+    d.show(landscape(7))                                                                         # the whole screen differs: 307 200 pixel bytes in all
+    sent_payload = sum(len(w) for w in d._ser.writes[1::2])
+    remaining_payload = HW_W * HW_H * 2 - sent_payload
+    extra = d.tx["pending"] - remaining_payload
+    assert extra >= txsched.HEADER_BYTES and extra % txsched.HEADER_BYTES == 0                  # at least one header per waiting block
+    assert d.tx["latency_s"] == pytest.approx(d.tx["pending"] / txsched.LINK_BPS)

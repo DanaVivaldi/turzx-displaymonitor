@@ -273,7 +273,7 @@ class Display:
                 chosen, rest = txsched.take(blocks, budget)
                 self._send_blocks(hw, chosen, prev)                      # `prev` gains each block only after it was written
                 sent = self.last_wire
-                self._pending_bytes = sum(txsched.rect_bytes(b) for _, b in rest)
+                self._pending_bytes = sum(txsched.wire_bytes(b) for _, b in rest)      # on the wire: headers included, like the budget
                 if self.band:                                            # self-healing band: lowest priority, only with spare capacity
                     band_bytes = txsched.wire_bytes((0, 0, HW_W, self.band))
                     slow_skip = self.mode == "slow" and self._cycle % max(1, self.slow["band_every"]) != 0
