@@ -59,6 +59,7 @@ def main():
     ap.add_argument("--force", action="store_true", help="with --init: replace existing config files (a .bak copy is kept)")
     ap.add_argument("--lang", choices=["en", "it"], help="language pack for --demo (default: the example in English)")
     ap.add_argument("--version", action="store_true", help="print the version")
+    ap.add_argument("--watchdog", action="store_true", help="start the program again if it died or froze (run by the 'DisplayMonitor Watchdog' task)")
     ap.add_argument("--check-update", action="store_true", help="look for a newer version on GitHub and say so")
     ap.add_argument("--update", action="store_true", help="download and install the newest version (asks first; config/ and assets/ are never touched)")
     ap.add_argument("--yes", action="store_true", help="with --update: do not ask")
@@ -68,6 +69,15 @@ def main():
     a = ap.parse_args()
     if a.version:
         print(__version__)
+        return
+    if a.watchdog:
+        from . import watchdog
+        os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
+        result = watchdog.run_once()
+        if result not in ("ok", "quit-requested"):
+            with open(os.path.join(ROOT, "logs", "watchdog.log"), "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {result}\n")
+        print(result)
         return
     if a.check_update or a.update:
         from . import updates
@@ -121,7 +131,9 @@ def main():
     if a.preview or a.dump_sensors:
         app = App(cfg, pages)
         app.sensors.start()
-        time.sleep(3.5)
+        t0 = time.time()
+        while time.time() - t0 < 12 and not (time.time() - t0 > 3.5 and (app.sensors.snapshot().get("cpu_name") or os.name != "nt")):
+            time.sleep(0.25)               # on Windows the hardware values come from a child process: give it time to answer
         snap = app.sensors.snapshot()
         if a.dump_sensors:
             for k in sorted(snap):
@@ -140,6 +152,9 @@ def main():
     if mutex is None:
         log.error("another instance is already running")
         return
+    if os.name == "nt":                      # a native crash must END the process (the watchdog restarts it), not wait for the "stopped working" dialog
+        import ctypes
+        ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
     import faulthandler                      # native crashes (pythonnet / .NET) leave a trace in logs/fault.txt
     fault = open(os.path.join(ROOT, "logs", "fault.txt"), "a")
     faulthandler.enable(file=fault, all_threads=True)

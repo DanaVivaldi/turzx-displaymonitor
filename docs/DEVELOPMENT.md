@@ -9,6 +9,8 @@ displaymonitor/
   sensors.py    LibreHardwareMonitor (pythonnet) + psutil + ping, polled at different rates, flat snapshot dict
   render.py     page renderer (Pillow, 3× supersampling): ring, cards, legend, colour scheme
   display.py    USB display driver: port discovery, init, diff → rectangles → blocks, flood recovery
+  hwproc.py     the hardware sensors in a child process (a native crash in a driver cannot kill the program) + its supervisor
+  watchdog.py   `--watchdog`: restart the program when it crashed / froze (heartbeat), unless it was quit on purpose
   sensors_posix.py  Linux / macOS backend (psutil + hwmon + nvidia-smi); pure parsers are unit-tested with fake data
   alerts.py     the full-screen temperature alarm: thresholds, hysteresis, rotation, the detail rows per component
   schedule.py   night window (wraps over midnight) and its brightness

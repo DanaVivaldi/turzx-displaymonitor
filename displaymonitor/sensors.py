@@ -19,6 +19,7 @@ from collections import deque
 
 import psutil
 
+from .hwproc import HardwareWorker
 from .weather import WMO, Weather
 
 log = logging.getLogger(__name__)
@@ -84,14 +85,20 @@ class Sensors:
         self.weather = Weather(cfg.get("weather"), self.lang)
         self.admin = bool(ctypes.windll.shell32.IsUserAnAdmin()) if os.name == "nt" else False
         self._posix = None                 # Linux / macOS backend (sensors_posix.PosixProbe)
+        # Windows: LibreHardwareMonitor runs in a child process, so a native crash in a driver cannot take the program down
+        self._worker = HardwareWorker(cfg, self._set, lambda keys: self._set({k: None for k in keys})) \
+            if os.name == "nt" and bool(s.get("isolate", True)) else None
 
     # -- lifecycle ------------------------------------------------------------------------------
     def start(self):
         if os.name == "nt":
             if not self.admin:
                 log.warning("not running as administrator: CPU / motherboard sensors will be missing")
-            self._open_lhm()
-            self._load_physical_disks()
+            if self._worker is not None:
+                self._worker.start()
+            else:
+                self._open_lhm()
+                self._load_physical_disks()
         else:
             from .sensors_posix import PosixProbe
             self._posix = PosixProbe(self.cfg)
@@ -108,6 +115,8 @@ class Sensors:
     def stop(self):
         self._stop.set()
         self.weather.stop()
+        if self._worker is not None:
+            self._worker.stop()
         if self._thread is not None:      # never Close() LHM while the poll thread is inside Update(): that crashes the process
             self._thread.join(timeout=10)
         try:
@@ -161,6 +170,8 @@ class Sensors:
         while not self._stop.wait(0.25):
             now = time.time()
             try:
+                if self._worker is not None:
+                    self._worker.poll()
                 if now >= nxt["fast"]:
                     nxt["fast"] = now + self.fast_s
                     self._poll_fast()
@@ -188,8 +199,11 @@ class Sensors:
             self._state.update(d)
 
     # -- LibreHardwareMonitor groups ------------------------------------------------------------
-    def _poll_fast(self):
+    def _poll_fast(self, hw_only=False):
         out = {}
+        if self._worker is not None:                # the hardware part lives in the child process
+            self._set(self._poll_system())
+            return
         if self._posix is not None:
             out.update(self._posix.fast())
             out.update(self._poll_system())
@@ -214,7 +228,8 @@ class Sensors:
                 self._memory(rows, str(hw.Name), out)
             elif kind == "SuperIO":
                 self._superio(rows, out)
-        out.update(self._poll_system())
+        if not hw_only:
+            out.update(self._poll_system())
         self._set(out)
 
     @staticmethod
@@ -319,6 +334,8 @@ class Sensors:
         out["mb_avcc"] = volts.get("AVCC")
 
     def _poll_storage(self):
+        if self._worker is not None:
+            return
         disks, used_pd = [], set()
         if self._posix is not None:
             disks = self._posix.disks()

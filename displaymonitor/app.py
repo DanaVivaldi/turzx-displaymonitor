@@ -17,6 +17,7 @@ from .schedule import night_active, night_brightness
 from .sensors import Sensors
 from .session import SessionWatcher
 from .updates import UpdateChecker
+from .watchdog import touch_heartbeat
 from .web import WebPreview
 
 log = logging.getLogger(__name__)
@@ -294,6 +295,11 @@ class App:
             self.web_wanted = {"on": True, "off": False}.get(cmd[4:], not self.web_enabled())
             self._save_state()
             self._sync_web()
+        elif cmd == "debug:kill-hw":                      # simulates a driver crash: the hardware child dies, the program must carry on
+            w = self.sensors._worker
+            if w is not None and w._proc is not None:
+                log.warning("debug: killing the hardware sensor process")
+                w._proc.kill()
         elif cmd == "update:check":
             threading.Thread(target=self.updates.check_now, daemon=True).start()
 
@@ -385,6 +391,12 @@ class App:
             self.display.needs_flood = True
         with open(flag, "w") as f:
             f.write(f"{os.getpid()} {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        quit_flag = os.path.join(ROOT, "logs", "quit.flag")        # written by a deliberate quit, so the watchdog leaves it alone
+        try:
+            os.remove(quit_flag)
+        except OSError:
+            pass
+        beat = 0.0
         self.sensors.start()
         self.updates.start()
         self.session.start()
@@ -399,10 +411,15 @@ class App:
                     if config_signature() != self._sig:
                         self.reload_config()
                 self._poll_control_file()
+                if t0 - beat >= 5.0:
+                    beat = t0
+                    touch_heartbeat()
                 try:
                     while True:
                         cmd = self.commands.get_nowait()
                         if cmd == "quit":
+                            with open(quit_flag, "w") as f:
+                                f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
                             return
                         self._handle(cmd)
                 except queue.Empty:

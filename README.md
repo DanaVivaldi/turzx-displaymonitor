@@ -128,7 +128,8 @@ language-pack examples (`*.example.yaml` English, `*.it.example.yaml` Italiano) 
 | Image upside down | `display.rotate: 3` (software rotation) |
 | Nothing happens, "display not found" in the log | check Device Manager for `USB Serial Device (COMx)` with VID 1A86 PID 5722; close the vendor's `UsbMonitor.exe`, only one program can own the port |
 | Wrong network adapter | set `network.interface` in `config.yaml` |
-| Two `pythonw.exe` processes | normal: the venv launcher plus the real interpreter |
+| Two or three `pythonw.exe` processes | normal: the venv launcher, the real interpreter and (Windows) the hardware-sensor child process |
+| The display froze on an old screen | the program crashed (a GPU-driver reset can do that): see `logs/fault.txt` / `logs/hw_fault.txt`. Run `scripts\install_autostart.ps1` elevated to get the watchdog that restarts it by itself, see [Crash resilience](docs/CONFIGURATION.md#crash-resilience-windows) |
 | Task "Running" but nothing on screen after a quit | the Task Scheduler ignores a start while the previous instance is still exiting: wait a few seconds and start again |
 
 More background on why these things happen: [docs/PROTOCOL.md](docs/PROTOCOL.md).

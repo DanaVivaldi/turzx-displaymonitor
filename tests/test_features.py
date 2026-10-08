@@ -315,3 +315,48 @@ def test_posix_backend_end_to_end():
     s.stop()
     assert snap["cpu_load"] is not None and snap["mem_pct"] > 0 and snap["cpu_name"]
     assert isinstance(snap["disks"], list) and "date" in snap
+
+
+# -- hardware child process and watchdog ---------------------------------------------------------------
+def test_hardware_worker_survives_a_crash_and_clears_stale_values(monkeypatch):
+    import time
+    from displaymonitor import hwproc
+    monkeypatch.setattr(hwproc, "BACKOFF", (0.2,))
+    state, cleared = {}, []
+    w = hwproc.HardwareWorker({"sensors": {"selftest": "crash"}}, state.update, lambda keys: (cleared.append(set(keys)), [state.__setitem__(k, None) for k in keys]),
+                              target=hwproc.selftest_worker)
+    w.start()
+    try:
+        deadline = time.time() + 20
+        while time.time() < deadline and not cleared:
+            w.poll()
+            time.sleep(0.05)
+        assert cleared, "the crash of the child was not noticed"
+        assert {"cpu_name", "cpu_temp", "disks"} <= cleared[0]
+        assert state["cpu_temp"] is None and state["disks"] is None          # no stale temperature left on screen
+        deadline = time.time() + 20
+        while time.time() < deadline and state.get("cpu_temp") is None:      # ... and the child is started again
+            w.poll()
+            time.sleep(0.05)
+        assert state["cpu_name"] == "fake" and w.restarts >= 1
+    finally:
+        w.stop()
+
+
+def test_watchdog_decisions(tmp_path, monkeypatch):
+    import os
+    import time
+    from displaymonitor import watchdog
+    monkeypatch.setattr(watchdog, "LOGS", str(tmp_path))
+    now = time.time()
+    assert watchdog.decide(now) == "not-running"
+    (tmp_path / "running.flag").write_text(f"{os.getpid()} x")
+    assert watchdog.decide(now) == "ok"                                     # no heartbeat yet, flag just written: start-up grace
+    os.utime(tmp_path / "running.flag", (now - 600, now - 600))
+    assert watchdog.decide(now) == "frozen"                                 # pid alive (this test process) but no heartbeat for minutes
+    watchdog.touch_heartbeat()
+    assert watchdog.decide(time.time()) == "ok"
+    (tmp_path / "running.flag").write_text("99999999 x")
+    assert watchdog.decide(now) == "dead"
+    (tmp_path / "quit.flag").write_text("x")
+    assert watchdog.decide(now) == "quit-requested"

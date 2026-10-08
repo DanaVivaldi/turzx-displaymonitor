@@ -123,6 +123,19 @@ Cards are stacked from the top; `h` is the height in px (all heights + 8 px gaps
 
 `bar: {color: heat}` colours the bar with the same scheme as the text.
 
+## Crash resilience (Windows)
+
+LibreHardwareMonitor reads the GPU driver, the CPU and the Super I/O chip through native code. If a driver resets (an NVIDIA driver reset
+crashed this program, iCUE and Task Manager at the same instant) the process dies with an access violation, which Python cannot catch.
+So, by default, the hardware polling runs in a **child process** (`sensors.isolate: true`): if it dies or stops answering for 20 s the program
+keeps drawing (the temperatures show `--`, never stale values), and the child is started again after 5-60 s. `--send debug:kill-hw` simulates the crash.
+
+The **watchdog** covers the rest: `scripts\install_autostart.ps1` (elevated) also registers a task *DisplayMonitor Watchdog* that runs
+`python -m displaymonitor --watchdog` every 5 minutes. It starts the program again if it crashed or froze (no heartbeat for 90 s), and does nothing after
+a deliberate quit (tray *Quit*, `--send quit`), which leaves `logs/quit.flag` until the next start. Its decisions are logged in `logs/watchdog.log`;
+a crashed child leaves `logs/hw_fault.txt`, the main program `logs/fault.txt`. A process that dies from a crash ends at once (no "stopped working" dialog),
+which is also why the "Ciao" screen cannot appear in that case: it is drawn only on an orderly stop (lock, sleep, shutdown, SIGTERM).
+
 ## Night schedule, "Ciao" screen, temperature alarm, web preview, updates
 
 All of these are in `config.yaml` and hot-reload.
