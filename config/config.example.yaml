@@ -4,6 +4,7 @@
 
 language: en           # language of the tray menu (en | it)
 # date_language: en    # language of the day / month names in the date, e.g. "Sat 03 Dec" (en) or "sab 03 dic" (it); defaults to `language`
+temperature_unit: celsius   # celsius | fahrenheit : every temperature on the display (limits and colours stay in °C)
 
 layout:
   header: false        # false = compact: no top bar, bigger ring, taller cards, big clock top-left, logos at the ring's lower corners.
@@ -50,6 +51,7 @@ sensors:
   procs_s: 3
   ping_s: 5
   ram_temp: false      # RAM module temperatures from the DIMMs' SPD sensors (needs PawnIO; can clash with iCUE / Armoury). Keys: ram_temp, ram_temps_str
+  # cpu_power_max: 150  # watt of a full power bar on the CPU page (it grows by itself if the CPU draws more)
   mb_ignore_temps: []  # motherboard probes that read garbage (unconnected), e.g. [5] hides "Temperature #5"
 
 # Optional weather page (Open-Meteo: free, no account / key). The only request is a GET to api.open-meteo.com with your coordinates.

@@ -34,6 +34,8 @@ If your own file is missing the example is used. Changes take effect after a res
 |---|---|---|
 | `language` | `en` | `en` or `it`: tray menu (and the date names unless `date_language` is set) |
 | `date_language` | = `language` | `en` or `it`: day / month names of the date (`Sat 03 Dec` / `sab 03 dic`); the time is always 24 h |
+| `temperature_unit` | `celsius` | `celsius` or `fahrenheit`: every temperature on the display, the alarm screen and the legends (`°C` in a label becomes `°F`). Colour thresholds (`theme.scale`), alarm limits and the sensor keys always stay in °C. Also in the tray (*Temperature unit*, remembered in `config/state.yaml`) and `--send unit:f` / `unit:c` / `unit:toggle` / `unit:config` |
+| `sensors.cpu_power_max` | `150` | watts of a full bar on the CPU page's *package power* card; it grows by itself if the CPU draws more (keys `cpu_power_peak`, `cpu_power_scale`) |
 | `layout.header` | `false` | `true`: top bar with page title, date/time and the optional logos. `false` (default): **compact layout** — no top bar, a 15 % bigger ring, cards stretched over the full height (fonts and spacing scale with them), logos at the two lower corners of the ring |
 | `layout.logo_h` | `22` | logo height in px |
 | `layout.ring_scale` | `1.15` | compact layout only: ring size relative to the default |
@@ -239,7 +241,7 @@ Any page can use `requires: weather` (or a list) to appear only when that featur
 
 ```
 python -m displaymonitor                    run
-python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | reload | page:<id> | brightness:<0-100> | logo:left:<name> | logo:right:<name|none> | logo:reset | web:on|off|toggle | away:lock|unlock|sleep|resume|shutdown | update:check
+python -m displaymonitor --send <cmd>       quit | home | next | prev | rotate | pin | reload | page:<id> | brightness:<0-100> | logo:left:<name> | logo:right:<name|none> | logo:reset | unit:c|f|toggle|config | web:on|off|toggle | away:lock|unlock|sleep|resume|shutdown | update:check
 python -m displaymonitor --preview          PNGs with real sensors  -> docs/preview/
 python -m displaymonitor --demo             PNGs with invented data -> docs/img/
 python -m displaymonitor --demo --theme ember --compact     try a theme preset / the compact layout

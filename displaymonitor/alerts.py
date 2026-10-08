@@ -15,6 +15,8 @@ Configured in config.yaml:
 """
 from __future__ import annotations
 
+from . import units
+
 COMPONENTS = ("cpu", "gpu", "ram", "disk", "mb")
 
 TEXT = {
@@ -35,26 +37,30 @@ def _v(x, fmt: str, unit: str = "") -> str:
     return "--" if x is None else format(x, fmt) + unit
 
 
-def _candidates(snap: dict, tr: dict) -> dict:
+def _candidates(snap: dict, tr: dict, unit: str = "C") -> dict:
     """component -> (temperature, device name, detail rows) for every component that currently has a reading."""
     out = {}
+    sym = units.symbol(unit)
+
+    def deg(x):                                          # a °C reading as text in the chosen unit
+        return _v(units.convert(x, unit), ".0f", sym)
     t = snap.get("cpu_temp") if snap.get("cpu_temp") is not None else snap.get("cpu_temp_max")
     if t is not None:
         rows = [(tr["load"], _v(snap.get("cpu_load"), ".0f", "%")), (tr["power"], _v(snap.get("cpu_power"), ".0f", " W")),
                 (tr["clock"], _v(snap.get("cpu_clock"), ".2f", " GHz"))]
         if snap.get("cpu_temp_max") is not None and snap.get("cpu_temp_max") != t:
-            rows.append((tr["coremax"], _v(snap["cpu_temp_max"], ".0f", "°C")))
+            rows.append((tr["coremax"], deg(snap["cpu_temp_max"])))
         out["cpu"] = (t, str(snap.get("cpu_name") or "CPU"), rows)
     t = snap.get("gpu_temp")
     if t is not None:
         fan = _v(snap.get("gpu_fan"), ".0f", " rpm") if snap.get("gpu_fan") is not None else _v(snap.get("gpu_fan_pct"), ".0f", "%")
-        rows = [(tr["load"], _v(snap.get("gpu_load"), ".0f", "%")), (tr["hotspot"], _v(snap.get("gpu_hotspot"), ".0f", "°C")),
+        rows = [(tr["load"], _v(snap.get("gpu_load"), ".0f", "%")), (tr["hotspot"], deg(snap.get("gpu_hotspot"))),
                 (tr["power"], _v(snap.get("gpu_power"), ".0f", " W")), (tr["fan"], fan),
                 (tr["vram"], _v(snap.get("gpu_vram_pct"), ".0f", "%"))]
         out["gpu"] = (t, str(snap.get("gpu_short") or "GPU"), rows)
     t = snap.get("ram_temp")
     if t is not None:
-        rows = [(tr["modules"], (snap.get("ram_temps_str") or "--") + "°C"), (tr["usage"], _v(snap.get("mem_pct"), ".0f", "%"))]
+        rows = [(tr["modules"], units.convert_numbers(snap.get("ram_temps_str") or "--", unit) + sym), (tr["usage"], _v(snap.get("mem_pct"), ".0f", "%"))]
         if snap.get("mem_used") is not None and snap.get("mem_total") is not None:
             rows.append((tr["used"], f"{snap['mem_used']:.1f} / {snap['mem_total']:.0f} GB"))
         out["ram"] = (t, "DDR", rows)
@@ -66,8 +72,8 @@ def _candidates(snap: dict, tr: dict) -> dict:
         out["disk"] = (d["temp"], str(d.get("name") or tr["disk"]), rows)
     t = snap.get("mb_t_max")
     if t is not None:
-        probes = " ".join(f"{snap[k]:.0f}" for k in sorted(snap) if k.startswith("mb_t") and k != "mb_t_max" and snap.get(k) is not None)
-        rows = [(tr["probes"], (probes or "--") + "°C"), (tr["fans"], str(snap.get("mb_fan_count", "--"))),
+        probes = " ".join(f"{units.convert(snap[k], unit):.0f}" for k in sorted(snap) if k.startswith("mb_t") and k != "mb_t_max" and snap.get(k) is not None)
+        rows = [(tr["probes"], (probes or "--") + sym), (tr["fans"], str(snap.get("mb_fan_count", "--"))),
                 (tr["vcore"], _v(snap.get("mb_vcore"), ".3f", " V"))]
         out["mb"] = (t, str(snap.get("mb_name") or tr["mb"]), rows)
     return out
@@ -76,14 +82,14 @@ def _candidates(snap: dict, tr: dict) -> dict:
 class TempAlarm:
     """Evaluates the alarm on every frame and remembers what was shown (hysteresis, minimum duration, rotation)."""
 
-    def __init__(self, cfg: dict | None = None, lang: str = "en"):
+    def __init__(self, cfg: dict | None = None, lang: str = "en", unit: str = "C"):
         self.active: set[str] = set()
         self._since = 0.0
         self._last: list[dict] = []
         self._held: set[str] = set()
-        self.configure(cfg, lang)
+        self.configure(cfg, lang, unit)
 
-    def configure(self, cfg, lang: str = "en"):
+    def configure(self, cfg, lang: str = "en", unit: str = "C"):
         """`cfg` is the whole `alerts:` section of config.yaml (a list = only the older page rules, no temperature alarm)."""
         section = cfg.get("temperature") if isinstance(cfg, dict) else None
         c = section if isinstance(section, dict) else {}
@@ -95,6 +101,7 @@ class TempAlarm:
         self.rotate_s = max(1.0, float(c.get("rotate_s", 6)))
         self.wake = bool(c.get("wake", True))
         self.tr = TEXT.get(lang, TEXT["en"])
+        self.unit = units.norm(unit)
         if not self.enabled:
             self.active.clear()
             self._held.clear()
@@ -107,7 +114,7 @@ class TempAlarm:
         """The alarm to show right now (a dict for Renderer.render_alert), or None."""
         if not self.enabled:
             return None
-        cands = _candidates(snap, self.tr)
+        cands = _candidates(snap, self.tr, self.unit)
         for comp, (temp, _name, _rows) in cands.items():
             lim = self.limit(comp)
             if temp >= lim or (comp in self.active and temp >= lim - self.hyst):
@@ -128,7 +135,9 @@ class TempAlarm:
             lim = self.limit(comp)
             alarms.append({"comp": comp, "label": self.tr[comp], "name": name, "temp": temp, "limit": lim,
                            "excess": temp - lim, "rows": rows, "title": self.tr["title"],
-                           "over": self.tr["over"].format(d=max(0.0, temp - lim)), "limit_text": self.tr["limit"].format(t=lim)})
+                           "over": units.swap_symbol(self.tr["over"], self.unit).format(d=units.delta(max(0.0, temp - lim), self.unit)),
+                           "limit_text": units.swap_symbol(self.tr["limit"], self.unit).format(t=units.convert(lim, self.unit)),
+                           "temp_show": units.convert(temp, self.unit), "unit": units.symbol(self.unit)})
         alarms.sort(key=lambda a: -a["excess"])
         self._last = alarms
         if not alarms:

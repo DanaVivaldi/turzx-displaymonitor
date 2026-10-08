@@ -13,10 +13,10 @@ log = logging.getLogger(__name__)
 TEXT = {
     "en": {"home": "Back to recap", "pages": "Show page", "rotate": "Automatic rotation", "brightness": "Brightness",
            "logo_left": "Left logo", "logo_right": "Right logo", "none": "None", "reset": "Logos from config", "reload": "Reload configuration", "quit": "Quit",
-           "web": "Web preview", "web_open": "Open the preview in the browser", "update": "Update available: v{v} (open)", "check": "Check for updates"},
+           "unit": "Temperature unit", "web": "Web preview", "web_open": "Open the preview in the browser", "update": "Update available: v{v} (open)", "check": "Check for updates"},
     "it": {"home": "Torna al riepilogo", "pages": "Mostra pagina", "rotate": "Rotazione automatica", "brightness": "Luminosità",
            "logo_left": "Logo a sinistra", "logo_right": "Logo a destra", "none": "Nessuno", "reset": "Loghi da configurazione", "reload": "Ricarica configurazione", "quit": "Esci",
-           "web": "Anteprima web", "web_open": "Apri l'anteprima nel browser", "update": "Aggiornamento disponibile: v{v} (apri)", "check": "Controlla aggiornamenti"},
+           "unit": "Unità di temperatura", "web": "Anteprima web", "web_open": "Apri l'anteprima nel browser", "update": "Aggiornamento disponibile: v{v} (apri)", "check": "Controlla aggiornamenti"},
 }
 
 
@@ -58,6 +58,9 @@ def build_tray(app):
         pystray.MenuItem(tr["logo_right"], logo_menu("right")),
         pystray.MenuItem(tr["reset"], send("logo:reset")),
         pystray.MenuItem(tr["reload"], send("reload")),
+        pystray.MenuItem(tr["unit"], pystray.Menu(
+            pystray.MenuItem("°C", send("unit:c"), checked=lambda item: app.unit == "C", radio=True),
+            pystray.MenuItem("°F", send("unit:f"), checked=lambda item: app.unit == "F", radio=True))),
         pystray.MenuItem(tr["web"], send("web:toggle"), checked=lambda item: app.web.running),
         pystray.MenuItem(tr["web_open"], lambda icon, item: webbrowser.open(app.web.url), visible=lambda item: app.web.running),
         pystray.MenuItem(lambda item: tr["update"].format(v=app.updates.available),

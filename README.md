@@ -33,6 +33,7 @@ for **Windows 10/11**. It replaces the vendor's `UsbMonitor.exe` with a small Py
 * **One colour language** for every temperature (°C) and utilisation (%): white below 50, green up to 60, then yellow → orange → red up to 100 (thresholds are configurable).
 * **Pages are plain YAML** (`config/pages.yaml`): rings, cards, bars, sparklines, legend, thresholds — no code needed.
 * **Temperature alarm**: when the CPU / GPU / RAM / a disk / the motherboard goes above a limit (default 85 °C, per component if you like) the **whole screen turns into an alarm** with the part's name, temperature and details (load, power, fan …), and the backlight goes to full.
+* **°C or °F**: one setting (or the tray menu) switches every temperature; thresholds and limits keep working in °C.
 * **Night schedule**: dim the screen, or switch it off, between two times.
 * **"Ciao" screen**: when the PC locks, sleeps, shuts down or you sign out the display shows a big word on your theme's background instead of a frozen page.
 * **Local web preview** with page buttons (tray tick, off by default, local only unless you set a token).

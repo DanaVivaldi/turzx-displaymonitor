@@ -29,7 +29,7 @@ def demo_snapshot(lang: str = "en") -> dict:
         # CPU
         "cpu_name": "Example CPU", "cpu_load": 46.0, "cpu_threads": threads, "cpu_temp": 62.0, "cpu_temp_max": 66.0,
         "cpu_p_temp": 61.0, "cpu_e_temp": 57.0, "cpu_p_temps_str": "61 63 60 62 59 64 61 60",
-        "cpu_e_temps_str": "56 57 58 55 57 56 58 57", "cpu_clock": 4.9, "cpu_clock_e": 3.8, "cpu_power": 78.0,
+        "cpu_e_temps_str": "56 57 58 55 57 56 58 57", "cpu_clock": 4.9, "cpu_clock_e": 3.8, "cpu_power": 78.0, "cpu_power_peak": 142.0, "cpu_power_scale": 150.0,
         # GPU
         "gpu_short": "RTX 4070", "gpu_load": 63.0, "gpu_temp": 66.0, "gpu_hotspot": 74.0, "gpu_power": 148.0,
         "gpu_vram_used": 7.4, "gpu_vram_total": 12.0, "gpu_vram_pct": 61.7, "gpu_clock": 2475.0, "gpu_mem_clock": 10500.0,

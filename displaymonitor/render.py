@@ -13,6 +13,8 @@ import string
 import yaml
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from . import units
+
 log = logging.getLogger(__name__)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 S = 3
@@ -153,13 +155,22 @@ def box(x0, y0, x1, y1):
 
 
 class SafeFormatter(string.Formatter):
-    """str.format that never raises: missing/None values render as '--'."""
+    """str.format that never raises: missing/None values render as '--'. With unit 'F' temperatures are converted from °C."""
+
+    def __init__(self, unit="C"):
+        self.unit = units.norm(unit)
 
     def get_field(self, field_name, args, kwargs):
         try:
-            return super().get_field(field_name, args, kwargs)
+            obj, key = super().get_field(field_name, args, kwargs)
         except (KeyError, IndexError, AttributeError, TypeError):
             return None, field_name
+        if self.unit == "F" and obj is not None and units.is_temperature_key(re.split(r"[.\[]", field_name)[0]):
+            if isinstance(obj, (int, float)) and not isinstance(obj, bool):
+                obj = units.c_to_f(obj)
+            elif isinstance(obj, str):
+                obj = units.convert_numbers(obj, "F")
+        return obj, key
 
     def get_value(self, key, args, kwargs):
         return kwargs.get(key) if isinstance(key, str) else None
@@ -173,11 +184,12 @@ class SafeFormatter(string.Formatter):
             return str(value)
 
 
-_fmt = SafeFormatter()
+_FORMATTERS = {"C": SafeFormatter("C"), "F": SafeFormatter("F")}
 
 
-def fmt(text, snap):
-    return _fmt.vformat(str(text), (), snap)
+def fmt(text, snap, unit="C"):
+    u = units.norm(unit)
+    return _FORMATTERS[u].vformat(units.swap_symbol(str(text), u), (), snap)
 
 
 def lerp(a, b, t):
@@ -186,7 +198,8 @@ def lerp(a, b, t):
 
 
 class Renderer:
-    def __init__(self, theme_cfg: dict | None = None, layout_cfg: dict | None = None):
+    def __init__(self, theme_cfg: dict | None = None, layout_cfg: dict | None = None, unit: str = "C"):
+        self.unit = units.norm(unit)          # temperature unit shown (the snapshot stays in °C)
         self.t = resolve_theme(theme_cfg)
         self._fonts = {}
         self._font_path = self._find_font(self.t["font"])
@@ -289,10 +302,14 @@ class Renderer:
     def text_of(self, spec, snap, default_color):
         if isinstance(spec, dict):
             col = self.color(spec["color"]) if "color" in spec else default_color
-            return fmt(spec.get("text", ""), snap), self.level(spec, snap, col)
-        return fmt(spec, snap), default_color
+            return self.fmt(spec.get("text", ""), snap), self.level(spec, snap, col)
+        return self.fmt(spec, snap), default_color
+
+    def fmt(self, text, snap):
+        return fmt(text, snap, self.unit)
 
     def draw_text(self, d, x, y, s, px, fill, anchor="la", bold=False):
+        s = units.swap_symbol(s, self.unit)                   # literal "°C" in legends and titles
         stroke = sc(px * 0.035) if bold and self._faux_bold(px, bold) else 0
         font = self.font(px, bold)
         if self.t.get("text_shadow"):                     # dark drop shadow: keeps small text readable on busy pictures
@@ -301,7 +318,7 @@ class Renderer:
         d.text((sc(x), sc(y)), s, font=font, fill=fill, anchor=anchor, stroke_width=stroke, stroke_fill=fill)
 
     def text_w(self, s, px):
-        return self.font(px).getlength(s) / S
+        return self.font(px).getlength(units.swap_symbol(s, self.unit)) / S
 
     def slot_w(self, s, px):
         """Width reserved for a value so that what follows it never moves when its digit count changes: every digit is measured
@@ -311,7 +328,7 @@ class Renderer:
         m = re.search(r"\d+", s)
         if not m:
             return self.text_w(s, px)
-        want = 3 if "%" in s else 2
+        want = 3 if ("%" in s or "°F" in s) else 2
         pad = digit * max(0, want - len(m.group()))
         ref = s[:m.start()] + pad + re.sub(r"\d", digit, s[m.start():])
         return max(self.text_w(ref, px), self.text_w(s, px))
@@ -551,11 +568,11 @@ class Renderer:
         self.draw_text(d, 68, 26, title, 19 if len(title) < 26 else 15, (255, 255, 255), "lm", bold=True)
         self.draw_text(d, 68, 47, a["name"], 12, (255, 205, 205), "lm")
         # giant temperature with a halo
-        temp = f"{a['temp']:.0f}"
+        temp = f"{a.get('temp_show', a['temp']):.0f}"
         w_num = self.font(96, True).getlength(temp) / S
         img = self._glow_text(img, (14 + w_num / 2, 128), temp, 96, (255, 255, 255), red, blur=10)
         d = ImageDraw.Draw(img)
-        self.draw_text(d, 18 + w_num, 100, "°C", 30, (255, 255, 255), "lm", bold=True)
+        self.draw_text(d, 18 + w_num, 100, a.get("unit", "°C"), 30, (255, 255, 255), "lm", bold=True)
         self.draw_text(d, 18, 192, a["over"], 14, (255, 210, 120), "lm", bold=True)
         self.draw_text(d, 18, 210, a["limit_text"], 11, (255, 205, 205), "lm")
         # gauge: 0..120 °C with the limit marked
@@ -626,7 +643,7 @@ class Renderer:
                 d.arc(bb, -90, -90 + 360 * frac, fill=col, width=sc(width))
         c = ring.get("center", {})
         if "label" in c:
-            self.draw_text(d, cx, cy - 32 * rs, fmt(c["label"], snap), 10.5 * rs, t["dim"], "mm")
+            self.draw_text(d, cx, cy - 32 * rs, self.fmt(c["label"], snap), 10.5 * rs, t["dim"], "mm")
         if "big" in c:
             s, col = self.text_of(c["big"], snap, t["white"])
             self.draw_text(d, cx, cy - 9 * rs, s, c.get("big_px", 36 if len(s) <= 4 else 28) * rs, col, "mm")
@@ -661,7 +678,7 @@ class Renderer:
     def _card(self, d, card, y, h, snap):
         t = self.t                              # (the panel itself was already drawn by render())
         k, fk = self._k, min(self._k, 1.2)
-        self.draw_text(d, CARD_IN0, y + 9 * k, fmt(card.get("title", ""), snap), 10.5 * fk, t["dim"])
+        self.draw_text(d, CARD_IN0, y + 9 * k, self.fmt(card.get("title", ""), snap), 10.5 * fk, t["dim"])
         getattr(self, "_card_" + card.get("kind", "main"))(d, card, y, h, snap)
 
     def _bar(self, d, spec, x0, x1, y, snap, height=6):
@@ -689,10 +706,17 @@ class Renderer:
         if "big" in card:
             s, col = self.text_of(card["big"], snap, t["white"])
             self.draw_text(d, CARD_IN0, y + (20 if tall else 18) * k, s, big_px, col)
+        right = card.get("right", [])
         if "mid" in card:
             ms, mcol = self.text_of(card["mid"], snap, t["cyan"])
-            self.draw_text(d, CARD_IN0 + self.slot_w(s, big_px) + 14, y + (36 if tall else 33) * k, ms, 18 * min(fk, 1.04), mcol, "lm")
-        right = card.get("right", [])
+            mx, mpx = CARD_IN0 + self.slot_w(s, big_px) + 14, 18 * min(fk, 1.04)
+            if right:                              # the secondary value never runs into the right-hand column (°F values are wider)
+                rw = max(self.text_w(self.text_of(r_, snap, t["dim"])[0], 11 * fk) for r_ in right[:2])
+                room = CARD_IN1 - rw - 8 - mx
+                w = self.text_w(ms, mpx)
+                if w > room > 0:
+                    mpx = max(11.0, mpx * room / w)
+            self.draw_text(d, mx, y + (36 if tall else 33) * k, ms, mpx, mcol, "lm")
         if len(right) == 1:
             rs, rc = self.text_of(right[0], snap, t["dim"])
             self.draw_text(d, CARD_IN1, y + 35 * k, rs, 11 * fk, rc, "rm")
@@ -716,7 +740,7 @@ class Renderer:
         vpx = max(10.0, min(base, base * (colw - 8) / widest))   # shrink values so columns never overlap
         for i, (it, (s, col)) in enumerate(zip(items, texts)):
             x = CARD_IN0 + i * colw
-            self.draw_text(d, x, y + 24 * k, fmt(it.get("label", ""), snap), (11 if n <= 3 else 10) * fk, t["dim"])
+            self.draw_text(d, x, y + 24 * k, self.fmt(it.get("label", ""), snap), (11 if n <= 3 else 10) * fk, t["dim"])
             self.draw_text(d, x, y + 38 * k + (base - vpx) / 3, s, vpx, col)
         foot = card.get("footer")
         if foot:
@@ -749,9 +773,13 @@ class Renderer:
         rowh = card.get("row_h", 20) * kk
         for i, (rs, spec) in enumerate(zip(rows, specs)):
             ry = y + 28 * kk + i * rowh
-            self.draw_text(d, CARD_IN0, ry, fmt(spec.get("label", ""), rs), 11.5 * fk, t["white"], "lm")
+            label = self.fmt(spec.get("label", ""), rs)
+            self.draw_text(d, CARD_IN0, ry, label, 11.5 * fk, t["white"], "lm")
             s, col = self.text_of({key: v for key, v in spec.items() if key != "label"}, rs, t["cyan"])
-            self.draw_text(d, CARD_IN1, ry, s, 11.5 * fk, col, "rm")
+            vpx, room, w = 11.5 * fk, (CARD_IN1 - CARD_IN0) - self.text_w(label, 11.5 * fk) - 10, self.text_w(s, 11.5 * fk)
+            if w > room > 0:                       # a long value (eight core temperatures in °F) shrinks instead of covering the label
+                vpx = max(7.5, vpx * room / w)
+            self.draw_text(d, CARD_IN1, ry, s, vpx, col, "rm")
             if "bar" in spec:
                 self._bar(d, spec["bar"], CARD_IN0, CARD_IN1, ry + 8 * kk, rs, height=3 * fk)
         if not rows:

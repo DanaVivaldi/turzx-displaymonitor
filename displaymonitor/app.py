@@ -16,6 +16,7 @@ from .render import Renderer
 from .schedule import night_active, night_brightness
 from .sensors import Sensors
 from .session import SessionWatcher
+from . import units
 from .updates import UpdateChecker
 from .watchdog import touch_heartbeat
 from .web import WebPreview
@@ -127,15 +128,21 @@ class CommandQueue(queue.Queue):
 
 
 class App:
+    @property
+    def unit(self) -> str:
+        """'C' or 'F': the tray's choice, else config.yaml `temperature_unit`."""
+        return units.norm(self.unit_wanted if self.unit_wanted else self.cfg.get("temperature_unit"))
+
     def __init__(self, cfg: dict, pages_cfg: dict):
         self.cfg = cfg
+        self.unit_wanted: str | None = None     # °C / °F chosen from the tray (saved in state.yaml); None = follow config temperature_unit
         self.pages = enabled_pages(pages_cfg, cfg)
         self.sensors = Sensors(cfg)
         self.display = Display(cfg.get("display", {}))
-        self.renderer = Renderer(cfg.get("theme"), cfg.get("layout"))
+        self.renderer = Renderer(cfg.get("theme"), cfg.get("layout"), self.unit)
         self.commands = CommandQueue()   # next | prev | home | pin | rotate | quit | page:<id> | brightness:<0-100> | away:<event> | web:on|off|toggle
         self.lang = cfg.get("language", "en")
-        self.alarm = TempAlarm(cfg.get("alerts"), self.lang)
+        self.alarm = TempAlarm(cfg.get("alerts"), self.lang, self.unit)
         self.base_brightness = self._cfg_brightness = self.display.brightness   # what the user asked for; the night schedule / alarm override it
         self.away: str | None = None            # lock | sleep | shutdown while the "Ciao" screen is shown
         self.bye_done = threading.Event()       # set once the shutdown frame has been sent
@@ -174,7 +181,7 @@ class App:
             pages = enabled_pages(pages_cfg, cfg)
             if not pages:
                 raise ValueError("no pages left after filtering")
-            renderer = Renderer(cfg.get("theme"), cfg.get("layout"))
+            renderer = Renderer(cfg.get("theme"), cfg.get("layout"), units.norm(self.unit_wanted if self.unit_wanted else cfg.get("temperature_unit")))
         except Exception as e:  # noqa: BLE001
             log.warning("config reload failed, keeping the previous configuration: %s", e)
             return
@@ -192,7 +199,7 @@ class App:
         if "brightness" in cfg.get("display", {}) and Display._clamp_pct(cfg["display"]["brightness"]) != self._cfg_brightness:
             self.base_brightness = self._cfg_brightness = Display._clamp_pct(cfg["display"]["brightness"])
         self.lang = cfg.get("language", "en")
-        self.alarm.configure(cfg.get("alerts"), self.lang)
+        self.alarm.configure(cfg.get("alerts"), self.lang, self.unit)
         self.sensors.set_language(cfg)
         self._sync_web()
         log.info("configuration reloaded (%s): %d pages, theme preset %s", reason, len(pages), (cfg.get("theme") or {}).get("preset"))
@@ -207,6 +214,10 @@ class App:
             self.renderer.set_logos(*(list(state["logos"]) + [None, None])[:2])
         if isinstance(state.get("web"), bool):
             self.web_wanted = state["web"]
+        if state.get("unit") in ("C", "F"):
+            self.unit_wanted = state["unit"]
+            self.renderer.unit = self.unit
+            self.alarm.configure(self.cfg.get("alerts"), self.lang, self.unit)
 
     def _save_state(self):
         state = {}
@@ -214,6 +225,8 @@ class App:
             state["logos"] = [x if isinstance(x, (str, dict)) else None for x in self.renderer.t["logos"]]
         if self.web_wanted is not None:
             state["web"] = self.web_wanted
+        if self.unit_wanted:
+            state["unit"] = self.unit_wanted
         try:
             if state:
                 with open(self.state_file, "w", encoding="utf-8") as f:
@@ -300,6 +313,12 @@ class App:
             if w is not None and w._proc is not None:
                 log.warning("debug: killing the hardware sensor process")
                 w._proc.kill()
+        elif cmd.startswith("unit:"):                      # unit:c | unit:f | unit:toggle | unit:config (back to config.yaml)
+            arg = cmd[5:].lower()
+            self.unit_wanted = {"c": "C", "celsius": "C", "f": "F", "fahrenheit": "F", "config": None}.get(arg, "C" if self.unit == "F" else "F")
+            self.renderer.unit = self.unit
+            self.alarm.configure(self.cfg.get("alerts"), self.lang, self.unit)
+            self._save_state()
         elif cmd == "update:check":
             threading.Thread(target=self.updates.check_now, daemon=True).start()
 

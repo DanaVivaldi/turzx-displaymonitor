@@ -88,13 +88,14 @@ pages:
           - {text: "P {cpu_p_temp:.0f}°C", value: cpu_p_temp}
           - {text: "E {cpu_e_temp:.0f}°C", value: cpu_e_temp}
         bar: {value: cpu_temp, min: 30, max: 100, color: heat}
-      - kind: stats
+      - kind: main
         h: 66
-        title: CLOCKS · POWER
-        items:
-          - {label: P-core, text: "{cpu_clock:.2f} GHz"}
-          - {label: E-core, text: "{cpu_clock_e:.2f} GHz"}
-          - {label: Power, text: "{cpu_power:.0f} W"}
+        title: PACKAGE POWER
+        big: "{cpu_power:.0f} W"
+        right:
+          - "peak {cpu_power_peak:.0f} W"
+          - "P {cpu_clock:.2f} · E {cpu_clock_e:.2f} GHz"
+        bar: {value: cpu_power, min: 0, max: cpu_power_scale, color: spectrum}      # a full bar = sensors.cpu_power_max (default 150 W) or the peak, whichever is larger
       - kind: list
         h: 82
         title: CORE TEMPERATURES (°C)

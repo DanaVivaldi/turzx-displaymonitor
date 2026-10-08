@@ -199,6 +199,15 @@ class Sensors:
             self._state.update(d)
 
     # -- LibreHardwareMonitor groups ------------------------------------------------------------
+    def _power_stats(self, out: dict):
+        """cpu_power_peak (highest reading since start) and cpu_power_scale (what a full bar means: the larger of the
+        configured `sensors.cpu_power_max`, default 150 W, and the peak)."""
+        p = out.get("cpu_power")
+        if p is not None:
+            self._power_peak = max(getattr(self, "_power_peak", 0.0), p)
+            out["cpu_power_peak"] = self._power_peak
+            out["cpu_power_scale"] = max(float(self.cfg.get("sensors", {}).get("cpu_power_max", 150)), self._power_peak)
+
     def _poll_fast(self, hw_only=False):
         out = {}
         if self._worker is not None:                # the hardware part lives in the child process
@@ -206,6 +215,7 @@ class Sensors:
             return
         if self._posix is not None:
             out.update(self._posix.fast())
+            self._power_stats(out)
             out.update(self._poll_system())
             self._set(out)
             return
@@ -228,6 +238,7 @@ class Sensors:
                 self._memory(rows, str(hw.Name), out)
             elif kind == "SuperIO":
                 self._superio(rows, out)
+        self._power_stats(out)
         if not hw_only:
             out.update(self._poll_system())
         self._set(out)

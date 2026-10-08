@@ -360,3 +360,63 @@ def test_watchdog_decisions(tmp_path, monkeypatch):
     assert watchdog.decide(now) == "dead"
     (tmp_path / "quit.flag").write_text("x")
     assert watchdog.decide(now) == "quit-requested"
+
+
+# -- Fahrenheit ------------------------------------------------------------------------------------
+def test_unit_helpers():
+    from displaymonitor import units
+    assert units.norm("Fahrenheit") == "F" and units.norm("f") == "F" and units.norm("°F") == "F" and units.norm(None) == "C" and units.norm("kelvin") == "C"
+    assert units.c_to_f(0) == 32 and units.c_to_f(100) == 212 and units.delta(10, "F") == 18 and units.delta(10, "C") == 10
+    assert units.convert_numbers("61 63 60.5", "F") == "142 145 140.9" and units.convert_numbers("61", "C") == "61"
+    assert units.swap_symbol("CPU °C · 45°C", "F") == "CPU °F · 45°F"
+    assert units.is_temperature_key("cpu_temp") and units.is_temperature_key("mb_t3") and units.is_temperature_key("weather_feels")
+    assert not units.is_temperature_key("cpu_load") and not units.is_temperature_key("gpu_vram_pct") and not units.is_temperature_key("mem_pct")
+
+
+def test_fmt_converts_temperatures_but_not_percentages():
+    s = {"cpu_temp": 50.0, "cpu_load": 50.0, "cpu_p_temps_str": "50 60", "temp": 100.0, "name": "x"}
+    assert render_mod.fmt("{cpu_temp:.0f}°C {cpu_load:.0f}% {cpu_p_temps_str} {temp:.0f}°C", s, "F") == "122°F 50% 122 140 212°F"
+    assert render_mod.fmt("{cpu_temp:.0f}°C", s) == "50°C" and render_mod.fmt("{cpu_temp:.0f}°C", {}, "F") == "--°F"
+
+
+def test_fahrenheit_leaves_colours_and_alarm_limits_in_celsius():
+    r_c, r_f = Renderer(None, {"header": False}), Renderer(None, {"header": False}, "F")
+    assert r_f.unit == "F"
+    snap_ = demo_snapshot("en")
+    page = load_config(examples=True, lang="en")[1]["pages"][1]
+    a, b = r_c.render(page, snap_, 1, 9), r_f.render(page, snap_, 1, 9)
+    assert a.size == b.size == (480, 320) and a.tobytes() != b.tobytes()
+    al = TempAlarm({"temperature": {"threshold": 85}}, "en", "F")
+    assert al.update(snap(cpu_temp=84), 0) is None                       # 84 °C = 183 °F: below the 85 °C limit
+    r = al.update(snap(cpu_temp=90), 1)
+    assert r["temp"] == 90 and round(r["temp_show"]) == 194 and r["unit"] == "°F" and "°F" in r["limit_text"] and r["over"].startswith("+9°F")
+    assert r_f.render_alert(r, True, snap_).size == (480, 320)
+
+
+def test_app_unit_command_and_cpu_power_card():
+    app = make_app({"temperature_unit": "fahrenheit"})
+    assert app.unit == "F" and app.renderer.unit == "F" and app.alarm.unit == "F"
+    app._handle("unit:c")
+    assert app.unit == "C" and app.renderer.unit == "C"
+    app._handle("unit:toggle")
+    assert app.unit == "F"
+    app._handle("unit:config")
+    assert app.unit == "F" and app.unit_wanted is None
+    cpu = next(p for p in app.pages if p["id"] == "cpu")
+    assert any("cpu_power" in str(c.get("big", "")) for c in cpu["cards"])    # the power card is on the CPU page
+    s = demo_snapshot("it")
+    assert app.renderer.render(cpu, s, 1, len(app.pages)).size == (480, 320)
+
+
+def test_cpu_power_peak_and_scale():
+    from displaymonitor.sensors import Sensors
+    s = Sensors({"sensors": {"cpu_power_max": 100}})
+    out = {"cpu_power": 80.0}
+    s._power_stats(out)
+    assert out["cpu_power_peak"] == 80 and out["cpu_power_scale"] == 100
+    out = {"cpu_power": 60.0}
+    s._power_stats(out)
+    assert out["cpu_power_peak"] == 80                                    # the peak stays
+    out = {"cpu_power": 130.0}
+    s._power_stats(out)
+    assert out["cpu_power_peak"] == 130 and out["cpu_power_scale"] == 130  # the bar grows with the CPU
